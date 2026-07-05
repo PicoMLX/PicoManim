@@ -74,7 +74,9 @@ struct MobjectTests {
 
     @Test func defaultStylesMirrorManim() {
         #expect(Mobject.circle(radius: 1).strokeColor == ManimColor.red)
-        #expect(Mobject.square().strokeColor == ManimColor.blue)
+        #expect(Mobject.square().strokeColor == ManimColor.white)
+        #expect(Mobject.rectangle(width: 2, height: 1).strokeColor == ManimColor.white)
+        #expect(Mobject.regularPolygon(sides: 5).strokeColor == ManimColor.blue)
         #expect(Mobject.line(from: .zero, to: Vec2(1, 0)).strokeColor == ManimColor.white)
         // Shapes default to no visible fill.
         #expect(Mobject.circle(radius: 1).effectiveFillAlpha == 0)

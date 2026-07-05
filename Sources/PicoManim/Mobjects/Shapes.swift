@@ -62,14 +62,15 @@ extension Mobject {
         return mobject
     }
 
-    /// An axis-aligned rectangle. Defaults to Manim's blue outline.
+    /// An axis-aligned rectangle. Defaults to Manim's white outline
+    /// (in Manim only the polygon-class shapes default to blue).
     public static func rectangle(width: Double, height: Double, at center: Vec2 = .zero) -> Mobject {
-        var mobject = Mobject(path: .rectangle(width: width, height: height), strokeColor: .blue)
+        var mobject = Mobject(path: .rectangle(width: width, height: height), strokeColor: .white)
         mobject.position = center
         return mobject
     }
 
-    /// A square. Defaults to Manim's blue outline.
+    /// A square. Defaults to Manim's white outline.
     public static func square(sideLength: Double = 2, at center: Vec2 = .zero) -> Mobject {
         rectangle(width: sideLength, height: sideLength, at: center)
     }
