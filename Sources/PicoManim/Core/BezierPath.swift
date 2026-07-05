@@ -239,16 +239,25 @@ public struct BezierPath: Sendable, Hashable {
         var a = subpaths
         var b = other.subpaths
 
-        func degenerateSubpath(near subpaths: [Subpath]) -> Subpath {
-            let anchor = subpaths.reversed().first { !$0.curves.isEmpty }?.curves.last?.p1 ?? .zero
+        // Anchor a padding subpath at the end of its own path, or — when the
+        // whole path is empty — at the start of the counterpart subpath it
+        // will pair with, so morphs never fly in from the origin.
+        func degenerateSubpath(near own: [Subpath], counterpart: [Subpath], pairIndex: Int) -> Subpath {
+            let anchor = own.reversed().first { !$0.curves.isEmpty }?.curves.last?.p1
+                ?? (pairIndex < counterpart.count ? counterpart[pairIndex].curves.first?.p0 : nil)
+                ?? .zero
             return Subpath(
                 curves: [CubicCurve(p0: anchor, c1: anchor, c2: anchor, p1: anchor)],
                 isClosed: false
             )
         }
 
-        while a.count < b.count { a.append(degenerateSubpath(near: a)) }
-        while b.count < a.count { b.append(degenerateSubpath(near: b)) }
+        while a.count < b.count {
+            a.append(degenerateSubpath(near: a, counterpart: b, pairIndex: a.count))
+        }
+        while b.count < a.count {
+            b.append(degenerateSubpath(near: b, counterpart: a, pairIndex: b.count))
+        }
 
         for i in a.indices {
             let target = Swift.max(a[i].curves.count, b[i].curves.count)

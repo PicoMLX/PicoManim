@@ -164,6 +164,18 @@ struct BezierPathTests {
         })
     }
 
+    @Test func aligningWhollyEmptyPathAnchorsAtCounterpart() {
+        let empty = BezierPath()
+        let line = BezierPath.line(from: Vec2(2, 3), to: Vec2(4, 3))
+        let (a, b) = empty.aligned(with: line)
+        #expect(a.subpaths.count == 1)
+        #expect(a.subpaths[0].curves.count == b.subpaths[0].curves.count)
+        // The padded side sits at the counterpart's start, not the origin.
+        #expect(a.subpaths[0].curves.allSatisfy {
+            approx($0.p0, Vec2(2, 3)) && approx($0.p1, Vec2(2, 3))
+        })
+    }
+
     @Test func interpolationEndpointsMatchInputs() throws {
         let circle = BezierPath.circle(radius: 1)
         let square = BezierPath.rectangle(width: 2, height: 2)
