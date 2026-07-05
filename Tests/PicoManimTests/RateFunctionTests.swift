@@ -3,7 +3,7 @@ import Testing
 
 @Suite("Rate functions")
 struct RateFunctionTests {
-    private let easings: [RateFunction] = [.linear, .smooth, .easeIn, .easeOut, .easeInOut]
+    private let easings: [RateFunction] = [.linear, .smooth, .smootherstep, .easeIn, .easeOut, .easeInOut]
 
     @Test func standardEasingsHitEndpoints() {
         for easing in easings {
@@ -33,6 +33,19 @@ struct RateFunctionTests {
         let low = RateFunction.smooth.apply(0.2)
         let high = RateFunction.smooth.apply(0.8)
         #expect(abs((low + high) - 1) < 1e-12)
+    }
+
+    @Test func smoothMatchesManimReferenceValues() {
+        // Manim's smooth(t) = normalized sigmoid(10(t - 0.5)):
+        // smooth(0.25) ≈ 0.0701037, smooth(0.75) ≈ 0.9298963.
+        #expect(abs(RateFunction.smooth.apply(0.25) - 0.0701037) < 1e-6)
+        #expect(abs(RateFunction.smooth.apply(0.75) - 0.9298963) < 1e-6)
+    }
+
+    @Test func smootherstepIsTheQuintic() {
+        // 6t^5 - 15t^4 + 10t^3 at 0.25 = 0.103515625.
+        #expect(abs(RateFunction.smootherstep.apply(0.25) - 0.103515625) < 1e-12)
+        #expect(abs(RateFunction.smootherstep.apply(0.5) - 0.5) < 1e-12)
     }
 
     @Test func thereAndBackReturnsToStart() {

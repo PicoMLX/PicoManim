@@ -1,10 +1,16 @@
+import Foundation
+
 /// Easing curves that map raw animation progress (0...1) to eased progress,
 /// mirroring Manim's rate functions.
 public enum RateFunction: Sendable {
     /// Constant speed.
     case linear
-    /// Manim's default smooth ease (quintic smoothstep).
+    /// Manim's default smooth ease: a logistic sigmoid (inflection 10)
+    /// normalized to hit 0 and 1 exactly at the endpoints.
     case smooth
+    /// The quintic smootherstep (6t⁵ − 15t⁴ + 10t³), matching Manim's
+    /// `smootherstep`. Slightly gentler than ``smooth``.
+    case smootherstep
     /// Cubic ease-in: starts slow, ends fast.
     case easeIn
     /// Cubic ease-out: starts fast, ends slow.
@@ -24,6 +30,16 @@ public enum RateFunction: Sendable {
         case .linear:
             return t
         case .smooth:
+            // Manim's smooth: sigmoid(10(t - 0.5)) normalized so the
+            // endpoints land exactly on 0 and 1. The explicit endpoint
+            // returns keep timeline end states exact despite floating point.
+            if t <= 0 { return 0 }
+            if t >= 1 { return 1 }
+            let inflection = 10.0
+            let error = 1 / (1 + Foundation.exp(inflection / 2))
+            let sigmoid = 1 / (1 + Foundation.exp(-inflection * (t - 0.5)))
+            return clamp((sigmoid - error) / (1 - 2 * error), 0...1)
+        case .smootherstep:
             // 6t^5 - 15t^4 + 10t^3
             return t * t * t * (t * (6 * t - 15) + 10)
         case .easeIn:
