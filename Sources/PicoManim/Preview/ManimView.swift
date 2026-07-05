@@ -66,6 +66,14 @@ public struct ManimView: View {
             }
         }
         .background(uiColor(background))
+        .onAppear {
+            // The struct (and its @State defaults) can be created well before
+            // the view is displayed; re-anchor the clock so autoplay doesn't
+            // start partway through the scene.
+            if isPlaying {
+                anchorDate = Date()
+            }
+        }
     }
 
     // MARK: - Playback
@@ -101,11 +109,10 @@ public struct ManimView: View {
 
     private func canvas(time: Double) -> some View {
         Canvas { context, size in
-            context.fill(
-                Path(CGRect(origin: .zero, size: size)),
-                with: .color(uiColor(background))
-            )
-            guard size.width > 0, size.height > 0 else { return }
+            // The view's .background fills behind the canvas; no need to
+            // paint it again here. Guard degenerate sizes (including a
+            // caller-supplied non-positive frameSize) so scale stays finite.
+            guard size.width > 0, size.height > 0, frameSize.x > 0, frameSize.y > 0 else { return }
 
             let scale = Swift.min(Double(size.width) / frameSize.x, Double(size.height) / frameSize.y)
             let centerX = Double(size.width) / 2
@@ -139,9 +146,11 @@ public struct ManimView: View {
                 if strokeAlpha > 0.001, mobject.strokeWidth > 0, mobject.strokeEnd > mobject.strokeStart {
                     var strokePath = path
                     if mobject.strokeStart > 0 || mobject.strokeEnd < 1 {
+                        // trimmedPath expects 0...1; clamp in case a custom
+                        // rate function overshoots.
                         strokePath = path.trimmedPath(
-                            from: CGFloat(mobject.strokeStart),
-                            to: CGFloat(mobject.strokeEnd)
+                            from: CGFloat(clamp(mobject.strokeStart, 0...1)),
+                            to: CGFloat(clamp(mobject.strokeEnd, 0...1))
                         )
                     }
                     context.stroke(

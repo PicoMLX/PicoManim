@@ -102,7 +102,7 @@ struct ContentView: View {
 | `Mobject.arc(radius:startAngle:endAngle:at:)` | white outline |
 | `Mobject.dot(at:radius:)` | white fill, no outline |
 | `Mobject.line(from:to:)` | white outline |
-| `Mobject.rectangle(width:height:at:)` / `.square(sideLength:at:)` | blue outline |
+| `Mobject.rectangle(width:height:at:)` / `.square(sideLength:at:)` | white outline |
 | `Mobject.triangle(radius:at:)` / `.regularPolygon(sides:radius:at:)` | blue outline |
 | `Mobject.polygon(_:)` / `.polyline(_:)` | blue / white outline |
 
