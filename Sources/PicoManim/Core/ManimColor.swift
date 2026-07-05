@@ -30,13 +30,15 @@ public struct ManimColor: Sendable, Hashable {
         ManimColor(red: red, green: green, blue: blue, alpha: alpha)
     }
 
-    /// Component-wise linear interpolation between two colors.
+    /// Component-wise linear interpolation between two colors. Components
+    /// are clamped to 0...1 so overshooting rate functions can't produce
+    /// out-of-range colors.
     public static func lerp(_ a: ManimColor, _ b: ManimColor, _ t: Double) -> ManimColor {
         ManimColor(
-            red: a.red + (b.red - a.red) * t,
-            green: a.green + (b.green - a.green) * t,
-            blue: a.blue + (b.blue - a.blue) * t,
-            alpha: a.alpha + (b.alpha - a.alpha) * t
+            red: clamp(lerp(a.red, b.red, t), 0...1),
+            green: clamp(lerp(a.green, b.green, t), 0...1),
+            blue: clamp(lerp(a.blue, b.blue, t), 0...1),
+            alpha: clamp(lerp(a.alpha, b.alpha, t), 0...1)
         )
     }
 

@@ -8,7 +8,7 @@ public typealias Vec2 = SIMD2<Double>
 extension SIMD2 where Scalar == Double {
     /// The Euclidean length of the vector.
     public var length: Double {
-        (x * x + y * y).squareRoot()
+        Foundation.hypot(x, y)
     }
 
     /// The vector rotated counterclockwise by `angle` radians around the origin.

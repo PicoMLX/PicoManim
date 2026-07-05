@@ -28,7 +28,7 @@ public struct Transform2D: Sendable, Hashable {
     public static func lerp(_ a: Transform2D, _ b: Transform2D, _ t: Double) -> Transform2D {
         Transform2D(
             translation: Vec2.lerp(a.translation, b.translation, t),
-            rotation: a.rotation + (b.rotation - a.rotation) * t,
+            rotation: PicoManim.lerp(a.rotation, b.rotation, t),
             scale: Vec2.lerp(a.scale, b.scale, t)
         )
     }
