@@ -1,0 +1,49 @@
+name: Swift
+
+on:
+  push:
+    branches: [ "main" ]
+  # No base-branch filter: stacked PRs (base = parent branch) must get CI too.
+  pull_request:
+
+jobs:
+  test-macos:
+    runs-on: macos-26
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode
+        run: |
+          # macos-26 images include /Applications/Xcode.app as the default
+          # Xcode 26 symlink. Point xcode-select at the Developer directory so
+          # the selected toolchain is unambiguous across runner-image updates.
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Show toolchain info
+        run: swift --version
+
+      - name: Build
+        run: swift build -v
+
+      - name: Test
+        run: swift test
+
+  # The core (geometry, mobjects, timeline) is platform-neutral; SwiftUI-only
+  # code is fenced behind `#if canImport(SwiftUI)`. Building and testing on
+  # Linux keeps that boundary honest.
+  test-linux:
+    runs-on: ubuntu-latest
+    container: swift:6.2
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show toolchain info
+        run: swift --version
+
+      - name: Build
+        run: swift build -v
+
+      - name: Test
+        run: swift test
