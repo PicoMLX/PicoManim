@@ -190,6 +190,32 @@ struct SceneTimelineTests {
         #expect(approx(end.opacity, 0.5))
     }
 
+    @Test func hideShowCyclePreservesTransformedOpacity() throws {
+        var scene = ManimScene()
+        let circle = Mobject.circle(radius: 1)
+        scene.play(.create(circle, duration: 1))
+        scene.play(.transform(circle, into: Mobject.square().withOpacity(0.5), duration: 1))
+        scene.play(.fadeOut(circle, duration: 1))
+        scene.play(.fadeIn(circle, duration: 1))
+
+        // fadeIn restores the transformed style opacity, not the authored one.
+        let end = try #require(scene.snapshot(at: 4).first)
+        #expect(approx(end.opacity, 0.5))
+    }
+
+    @Test func completedTransformReturnsTheExactTargetPath() throws {
+        var scene = ManimScene()
+        let circle = Mobject.circle(radius: 1)
+        scene.play(.create(circle, duration: 1))
+        scene.play(.transform(circle, into: Mobject(path: BezierPath()), duration: 1))
+
+        // No phantom degenerate geometry from path alignment survives the
+        // completed morph.
+        let end = try #require(scene.snapshot(at: 2).first)
+        #expect(end.path.isEmpty)
+        #expect(scene.state(of: circle)?.path.isEmpty == true)
+    }
+
     @Test func fadeInIntroducesFromShiftedTransparentState() throws {
         var scene = ManimScene()
         let dot = Mobject.dot(at: Vec2(0, 0))

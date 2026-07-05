@@ -48,6 +48,10 @@ public struct ManimScene: Sendable {
     private var initialStates: [Mobject.ID: Mobject] = [:]
     /// Build cursor: each mobject's state after everything scheduled so far.
     private var currentStates: [Mobject.ID: Mobject] = [:]
+    /// The most recent nonzero opacity each mobject carried on the build
+    /// cursor, so hide/show cycles (fadeOut then fadeIn/create) restore the
+    /// style opacity a transform may have set, not the authored value.
+    private var lastVisibleOpacities: [Mobject.ID: Double] = [:]
     /// Draw order (insertion order).
     private var order: [Mobject.ID] = []
 
@@ -157,7 +161,18 @@ public struct ManimScene: Sendable {
             if case .transform(let target) = animation.kind {
                 entry.alignedPaths = startState.path.aligned(with: target.path)
             }
-            entry.endState = Self.endState(for: animation, from: startState, preGroup: preGroup)
+            // The opacity a revealing animation should end at: the current
+            // style opacity, or - when currently hidden - the last opacity
+            // the object was visible with (falling back to the authored one).
+            let revealOpacity = preGroup.opacity > 0
+                ? preGroup.opacity
+                : (lastVisibleOpacities[id] ?? animation.mobject.opacity)
+            entry.endState = Self.endState(
+                for: animation,
+                from: startState,
+                preGroup: preGroup,
+                revealOpacity: revealOpacity
+            )
             entries.append(entry)
 
             // Advance the build cursor to the state the animation actually
@@ -169,6 +184,9 @@ public struct ManimScene: Sendable {
                 easedProgress: entry.rate.apply(1),
                 to: currentStates[id] ?? startState
             )
+            if let opacity = currentStates[id]?.opacity, opacity > 0 {
+                lastVisibleOpacities[id] = opacity
+            }
             groupDuration = max(groupDuration, entry.duration)
         }
         duration = groupStart + groupDuration
@@ -246,7 +264,8 @@ public struct ManimScene: Sendable {
     private static func endState(
         for animation: ManimAnimation,
         from start: Mobject,
-        preGroup: Mobject
+        preGroup: Mobject,
+        revealOpacity: Double
     ) -> Mobject {
         var end = start
         switch animation.kind {
@@ -254,16 +273,11 @@ public struct ManimScene: Sendable {
             end.strokeStart = 0
             end.strokeEnd = 1
             end.fillOpacityFactor = 1
-            // Like fadeIn, create is a revealing animation: if the object was
-            // fully transparent (e.g. after a fadeOut), restore its opacity
-            // as the outline redraws.
-            end.opacity = preGroup.opacity > 0 ? preGroup.opacity : animation.mobject.opacity
+            // Like fadeIn, create is a revealing animation: it ends at the
+            // opacity the object should be visible with.
+            end.opacity = revealOpacity
         case .fadeIn(let shift):
-            // Fade back to the opacity the object currently has (it may have
-            // changed via a transform). If it is currently fully transparent
-            // (e.g. after a fadeOut), fall back to the authored opacity so
-            // fadeIn always reveals something.
-            end.opacity = preGroup.opacity > 0 ? preGroup.opacity : animation.mobject.opacity
+            end.opacity = revealOpacity
             end.transform.translation += shift
         case .fadeOut(let shift):
             end.opacity = 0
@@ -322,10 +336,17 @@ public struct ManimScene: Sendable {
         case .scale:
             state.transform.scale = Vec2.lerp(a.transform.scale, b.transform.scale, p)
         case .transform:
-            if let (pathA, pathB) = entry.alignedPaths {
+            // At the poles, return the exact (unaligned) paths: the aligned
+            // copies are structurally padded, and for an empty target the
+            // padding would leave phantom degenerate geometry behind.
+            if p <= 0 {
+                state.path = a.path
+            } else if p >= 1 {
+                state.path = b.path
+            } else if let (pathA, pathB) = entry.alignedPaths {
                 state.path = BezierPath.interpolate(pathA, pathB, p)
             } else {
-                state.path = p < 1 ? a.path : b.path
+                state.path = a.path
             }
             state.transform = Transform2D.lerp(a.transform, b.transform, p)
             state.strokeColor = ManimColor.lerp(a.strokeColor, b.strokeColor, p)
