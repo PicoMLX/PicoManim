@@ -240,10 +240,12 @@ public struct BezierPath: Sendable, Hashable {
         var b = other.subpaths
 
         // Anchor a padding subpath at the end of its own path, or — when the
-        // whole path is empty — at the start of the counterpart subpath it
-        // will pair with, so morphs never fly in from the origin.
-        func degenerateSubpath(near own: [Subpath], counterpart: [Subpath], pairIndex: Int) -> Subpath {
-            let anchor = own.reversed().first { !$0.curves.isEmpty }?.curves.last?.p1
+        // path was originally empty — at the start of the counterpart subpath
+        // it will pair with, so morphs never fly in from the origin. The
+        // own-side anchor is resolved against the pre-padding subpaths so a
+        // pad never latches onto an earlier pad's degenerate point.
+        func degenerateSubpath(ownLastPoint: Vec2?, counterpart: [Subpath], pairIndex: Int) -> Subpath {
+            let anchor = ownLastPoint
                 ?? (pairIndex < counterpart.count ? counterpart[pairIndex].curves.first?.p0 : nil)
                 ?? .zero
             return Subpath(
@@ -252,11 +254,13 @@ public struct BezierPath: Sendable, Hashable {
             )
         }
 
+        let lastPointA = a.reversed().first { !$0.curves.isEmpty }?.curves.last?.p1
+        let lastPointB = b.reversed().first { !$0.curves.isEmpty }?.curves.last?.p1
         while a.count < b.count {
-            a.append(degenerateSubpath(near: a, counterpart: b, pairIndex: a.count))
+            a.append(degenerateSubpath(ownLastPoint: lastPointA, counterpart: b, pairIndex: a.count))
         }
         while b.count < a.count {
-            b.append(degenerateSubpath(near: b, counterpart: a, pairIndex: b.count))
+            b.append(degenerateSubpath(ownLastPoint: lastPointB, counterpart: a, pairIndex: b.count))
         }
 
         for i in a.indices {
