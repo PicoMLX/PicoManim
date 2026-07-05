@@ -171,15 +171,17 @@ public struct BezierPath: Sendable, Hashable {
     }
 
     /// An approximate axis-aligned bounding box, computed by sampling each
-    /// curve. Returns `nil` for an empty path.
+    /// curve. Returns `nil` for an empty path. `samplesPerCurve` is clamped
+    /// to at least 1.
     public func boundingBox(samplesPerCurve: Int = 8) -> (min: Vec2, max: Vec2)? {
+        let samples = Swift.max(1, samplesPerCurve)
         var minPoint = Vec2(Double.infinity, Double.infinity)
         var maxPoint = Vec2(-Double.infinity, -Double.infinity)
         var found = false
         for subpath in subpaths {
             for curve in subpath.curves {
-                for i in 0...samplesPerCurve {
-                    let p = curve.point(at: Double(i) / Double(samplesPerCurve))
+                for i in 0...samples {
+                    let p = curve.point(at: Double(i) / Double(samples))
                     minPoint = Vec2(Swift.min(minPoint.x, p.x), Swift.min(minPoint.y, p.y))
                     maxPoint = Vec2(Swift.max(maxPoint.x, p.x), Swift.max(maxPoint.y, p.y))
                     found = true
@@ -238,7 +240,7 @@ public struct BezierPath: Sendable, Hashable {
         var b = other.subpaths
 
         func degenerateSubpath(near subpaths: [Subpath]) -> Subpath {
-            let anchor = subpaths.last?.curves.last?.p1 ?? .zero
+            let anchor = subpaths.reversed().first { !$0.curves.isEmpty }?.curves.last?.p1 ?? .zero
             return Subpath(
                 curves: [CubicCurve(p0: anchor, c1: anchor, c2: anchor, p1: anchor)],
                 isClosed: false
@@ -250,8 +252,12 @@ public struct BezierPath: Sendable, Hashable {
 
         for i in a.indices {
             let target = Swift.max(a[i].curves.count, b[i].curves.count)
-            a[i] = a[i].subdividedEvenly(to: target)
-            b[i] = b[i].subdividedEvenly(to: target)
+            // Anchor an empty subpath at its counterpart's start so its
+            // degenerate curves don't fly in from the origin during a morph.
+            let anchorA = a[i].curves.first?.p0 ?? b[i].curves.first?.p0 ?? .zero
+            let anchorB = b[i].curves.first?.p0 ?? a[i].curves.first?.p0 ?? .zero
+            a[i] = a[i].subdividedEvenly(to: target, fallbackAnchor: anchorA)
+            b[i] = b[i].subdividedEvenly(to: target, fallbackAnchor: anchorB)
         }
         return (BezierPath(subpaths: a), BezierPath(subpaths: b))
     }
@@ -283,15 +289,17 @@ public struct BezierPath: Sendable, Hashable {
 
 extension BezierPath.Subpath {
     /// The subpath with its curves subdivided so the total curve count is
-    /// `target`. Extra splits are distributed as evenly as possible.
-    public func subdividedEvenly(to target: Int) -> BezierPath.Subpath {
+    /// `target`. Extra splits are distributed as evenly as possible. An
+    /// empty subpath is filled with degenerate point-curves placed at
+    /// `fallbackAnchor` (callers pass the counterpart path's start point so
+    /// morphs don't fly in from the origin).
+    public func subdividedEvenly(to target: Int, fallbackAnchor: Vec2 = .zero) -> BezierPath.Subpath {
         let count = curves.count
         guard target > count else { return self }
         guard count > 0 else {
-            // An empty subpath still has to match the other path's structure:
-            // fill it with degenerate point-curves.
-            let point = Vec2.zero
-            let degenerate = CubicCurve(p0: point, c1: point, c2: point, p1: point)
+            let degenerate = CubicCurve(
+                p0: fallbackAnchor, c1: fallbackAnchor, c2: fallbackAnchor, p1: fallbackAnchor
+            )
             return BezierPath.Subpath(
                 curves: Array(repeating: degenerate, count: target),
                 isClosed: isClosed

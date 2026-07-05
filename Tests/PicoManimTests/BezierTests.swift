@@ -145,6 +145,25 @@ struct BezierPathTests {
         }
     }
 
+    @Test func boundingBoxToleratesNonPositiveSampleCounts() throws {
+        let path = BezierPath.rectangle(width: 2, height: 2)
+        let box = try #require(path.boundingBox(samplesPerCurve: 0))
+        #expect(approx(box.max.x, 1))
+        #expect(path.boundingBox(samplesPerCurve: -3) != nil)
+    }
+
+    @Test func alignmentAnchorsEmptySubpathAtCounterpart() {
+        let empty = BezierPath(subpaths: [BezierPath.Subpath(curves: [])])
+        let line = BezierPath.line(from: Vec2(2, 3), to: Vec2(4, 3))
+        let (a, b) = empty.aligned(with: line)
+        #expect(a.subpaths[0].curves.count == b.subpaths[0].curves.count)
+        // The degenerate side sits at the counterpart's start, not the origin,
+        // so a morph doesn't fly in from (0, 0).
+        #expect(a.subpaths[0].curves.allSatisfy {
+            approx($0.p0, Vec2(2, 3)) && approx($0.p1, Vec2(2, 3))
+        })
+    }
+
     @Test func interpolationEndpointsMatchInputs() throws {
         let circle = BezierPath.circle(radius: 1)
         let square = BezierPath.rectangle(width: 2, height: 2)
