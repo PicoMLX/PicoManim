@@ -34,11 +34,13 @@ public struct ManimColor: Sendable, Hashable {
     /// are clamped to 0...1 so overshooting rate functions can't produce
     /// out-of-range colors.
     public static func lerp(_ a: ManimColor, _ b: ManimColor, _ t: Double) -> ManimColor {
+        // Module-qualified: inside this static `lerp`, an unqualified call
+        // resolves to the enclosing member, not the scalar helper.
         ManimColor(
-            red: clamp(lerp(a.red, b.red, t), 0...1),
-            green: clamp(lerp(a.green, b.green, t), 0...1),
-            blue: clamp(lerp(a.blue, b.blue, t), 0...1),
-            alpha: clamp(lerp(a.alpha, b.alpha, t), 0...1)
+            red: clamp(PicoManim.lerp(a.red, b.red, t), 0...1),
+            green: clamp(PicoManim.lerp(a.green, b.green, t), 0...1),
+            blue: clamp(PicoManim.lerp(a.blue, b.blue, t), 0...1),
+            alpha: clamp(PicoManim.lerp(a.alpha, b.alpha, t), 0...1)
         )
     }
 
