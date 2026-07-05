@@ -83,16 +83,19 @@ public struct Mobject: Identifiable, Sendable, Hashable {
         path.transformed(by: transform)
     }
 
-    /// Effective stroke alpha after all opacity factors, clamped to 0...1
-    /// so out-of-range inputs (e.g. custom rate functions that overshoot)
-    /// can't reach the renderer.
+    /// Effective stroke alpha after all opacity factors. Each factor is
+    /// clamped to 0...1 before multiplying so out-of-range inputs (e.g.
+    /// custom rate functions that overshoot) can't reach the renderer —
+    /// clamping only the product would let two negative factors multiply
+    /// into a visible alpha.
     public var effectiveStrokeAlpha: Double {
-        clamp(strokeColor.alpha * opacity, 0...1)
+        clamp(strokeColor.alpha, 0...1) * clamp(opacity, 0...1)
     }
 
-    /// Effective fill alpha after all opacity factors, clamped to 0...1.
+    /// Effective fill alpha after all opacity factors, each clamped to
+    /// 0...1 before multiplying.
     public var effectiveFillAlpha: Double {
-        clamp(fillColor.alpha * fillOpacityFactor * opacity, 0...1)
+        clamp(fillColor.alpha, 0...1) * clamp(fillOpacityFactor, 0...1) * clamp(opacity, 0...1)
     }
 
     // MARK: - Fluent modifiers (identity-preserving)

@@ -76,15 +76,17 @@ extension Mobject {
     }
 
     /// A regular polygon with `sides` vertices inscribed in a circle of
-    /// `radius`, first vertex pointing up.
+    /// `radius`, oriented like Manim's `RegularPolygon`: odd side counts
+    /// point a vertex up, even side counts place a vertex at angle 0.
     public static func regularPolygon(
         sides: Int,
         radius: Double = 1,
         at center: Vec2 = .zero
     ) -> Mobject {
         precondition(sides >= 3, "A regular polygon needs at least 3 sides")
+        let startAngle = sides.isMultiple(of: 2) ? 0 : Double.pi / 2
         var mobject = Mobject(
-            path: .regularPolygon(sides: sides, radius: radius),
+            path: .regularPolygon(sides: sides, radius: radius, startAngle: startAngle),
             strokeColor: .blue
         )
         mobject.position = center

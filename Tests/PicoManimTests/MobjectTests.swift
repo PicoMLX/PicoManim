@@ -98,6 +98,26 @@ struct MobjectTests {
         #expect(negative.effectiveStrokeAlpha == 0)
     }
 
+    @Test func negativeOpacityFactorsCannotMultiplyIntoVisibleAlpha() {
+        var square = Mobject.square().fill(.blue, opacity: 1)
+        square.fillOpacityFactor = -0.5
+        square.opacity = -0.5
+        #expect(square.effectiveFillAlpha == 0)
+        #expect(square.effectiveStrokeAlpha == 0)
+    }
+
+    @Test func evenRegularPolygonsStartAtAngleZeroLikeManim() throws {
+        let hexagon = Mobject.regularPolygon(sides: 6, radius: 1)
+        let box = try #require(hexagon.worldPath.boundingBox())
+        // Even side counts place a vertex at angle 0: width 2, height 2·sin60°.
+        #expect(approx(box.max.x, 1, tolerance: 1e-9))
+        #expect(approx(box.max.y, 3.0.squareRoot() / 2, tolerance: 1e-9))
+        // Odd side counts still point a vertex up.
+        let triangle = Mobject.triangle(radius: 1)
+        let triangleBox = try #require(triangle.worldPath.boundingBox())
+        #expect(approx(triangleBox.max.y, 1, tolerance: 1e-9))
+    }
+
     @Test func triangleIsRegularPolygonWithThreeSides() {
         let triangle = Mobject.triangle(radius: 1)
         #expect(triangle.path.curveCount == 3)
