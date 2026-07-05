@@ -86,20 +86,31 @@ public struct ManimScene: Sendable {
         guard !animations.isEmpty else { return }
         let groupStart = duration
         var groupDuration: Double = 0
+        // All animations in one play call are simultaneous, so every one of
+        // them resolves its start pole from the state *before* the group —
+        // never from a sibling's end state, which would make the mobject
+        // jump at the start of the group.
+        var groupStartStates = currentStates
 
         for animation in animations {
             let id = animation.mobject.id
             let startState: Mobject
-            if let current = currentStates[id] {
+            // The state the mobject is in as this group begins; the authored
+            // value for a mobject this play call introduces.
+            let preGroup = groupStartStates[id] ?? animation.mobject
+            if groupStartStates[id] != nil {
                 // Re-introducing animations (create, fadeIn) restart from a
                 // hidden version of wherever the mobject currently is.
-                startState = Self.introducedStartState(for: animation.kind, from: current)
+                startState = Self.introducedStartState(for: animation.kind, from: preGroup)
             } else {
                 // First appearance: seed time zero with a hidden state so the
                 // mobject doesn't exist on screen before this point.
                 let hidden = Self.initialState(for: animation)
                 initialStates[id] = hidden
                 order.append(id)
+                // A sibling animation in this same group starts from the
+                // authored state, not from this animation's end.
+                groupStartStates[id] = animation.mobject
                 switch animation.kind {
                 case .create, .fadeIn:
                     startState = hidden
@@ -134,13 +145,18 @@ public struct ManimScene: Sendable {
             if case .transform(let target) = animation.kind {
                 entry.alignedPaths = startState.path.aligned(with: target.path)
             }
-            entry.endState = Self.endState(for: animation, from: startState)
+            entry.endState = Self.endState(for: animation, from: startState, preGroup: preGroup)
             entries.append(entry)
 
             // Advance the build cursor to the state the animation actually
             // leaves behind (for rate functions like `thereAndBack` this is
-            // not the end pole).
-            currentStates[id] = Self.apply(entry, easedProgress: entry.rate.apply(1), to: startState)
+            // not the end pole). Applied on top of the accumulated state so
+            // sibling animations in this group all contribute.
+            currentStates[id] = Self.apply(
+                entry,
+                easedProgress: entry.rate.apply(1),
+                to: currentStates[id] ?? startState
+            )
             groupDuration = max(groupDuration, entry.duration)
         }
         duration = groupStart + groupDuration
@@ -212,8 +228,14 @@ public struct ManimScene: Sendable {
         return start
     }
 
-    /// The animation's end pole (state at uneased progress 1).
-    private static func endState(for animation: ManimAnimation, from start: Mobject) -> Mobject {
+    /// The animation's end pole (state at uneased progress 1). `preGroup`
+    /// is the mobject's state as the play group begins (the authored value
+    /// on first introduction).
+    private static func endState(
+        for animation: ManimAnimation,
+        from start: Mobject,
+        preGroup: Mobject
+    ) -> Mobject {
         var end = start
         switch animation.kind {
         case .create:
@@ -221,7 +243,11 @@ public struct ManimScene: Sendable {
             end.strokeEnd = 1
             end.fillOpacityFactor = 1
         case .fadeIn(let shift):
-            end.opacity = animation.mobject.opacity
+            // Fade back to the opacity the object currently has (it may have
+            // changed via a transform). If it is currently fully transparent
+            // (e.g. after a fadeOut), fall back to the authored opacity so
+            // fadeIn always reveals something.
+            end.opacity = preGroup.opacity > 0 ? preGroup.opacity : animation.mobject.opacity
             end.transform.translation += shift
         case .fadeOut(let shift):
             end.opacity = 0

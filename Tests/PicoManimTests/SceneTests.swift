@@ -106,6 +106,40 @@ struct SceneTimelineTests {
         #expect(approx(end.position, Vec2(1, 0)))
     }
 
+    @Test func parallelAnimationsOnSamePropertyDoNotJump() throws {
+        var scene = ManimScene()
+        let dot = Mobject.dot(at: .zero)
+        scene.add(dot)
+        scene.play(
+            .shift(dot, by: Vec2(1, 0), duration: 1, rate: .linear),
+            .shift(dot, by: Vec2(0, 2), duration: 1, rate: .linear)
+        )
+
+        // No jump at the start of the group: both siblings start from the
+        // pre-group state.
+        let start = try #require(scene.snapshot(at: 0).first)
+        #expect(approx(start.position, Vec2(0, 0)))
+        // Same-property siblings don't blend; the later one wins...
+        let mid = try #require(scene.snapshot(at: 0.5).first)
+        #expect(approx(mid.position, Vec2(0, 1)))
+        // ...through to its own end pole.
+        let end = try #require(scene.snapshot(at: 1).first)
+        #expect(approx(end.position, Vec2(0, 2)))
+    }
+
+    @Test func fadeInAfterTransformKeepsTransformedOpacity() throws {
+        var scene = ManimScene()
+        let circle = Mobject.circle(radius: 1)
+        scene.play(.create(circle, duration: 1))
+        scene.play(.transform(circle, into: Mobject.square().withOpacity(0.5), duration: 1))
+        scene.play(.fadeIn(circle, duration: 1))
+
+        // fadeIn restores the object's current opacity, not the stale
+        // authored value from before the morph.
+        let end = try #require(scene.snapshot(at: 3).first)
+        #expect(approx(end.opacity, 0.5))
+    }
+
     @Test func fadeInIntroducesFromShiftedTransparentState() throws {
         var scene = ManimScene()
         let dot = Mobject.dot(at: Vec2(0, 0))
