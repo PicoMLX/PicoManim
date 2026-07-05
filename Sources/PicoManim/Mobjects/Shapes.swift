@@ -81,6 +81,7 @@ extension Mobject {
         radius: Double = 1,
         at center: Vec2 = .zero
     ) -> Mobject {
+        precondition(sides >= 3, "A regular polygon needs at least 3 sides")
         var mobject = Mobject(
             path: .regularPolygon(sides: sides, radius: radius),
             strokeColor: .blue
@@ -96,6 +97,7 @@ extension Mobject {
 
     /// A closed polygon through the given scene-space points.
     public static func polygon(_ points: [Vec2]) -> Mobject {
+        precondition(points.count >= 3, "A polygon needs at least 3 points")
         let path = BezierPath.polygon(points)
         let localCenter = path.boundingBoxCenter
         var mobject = Mobject(
@@ -108,6 +110,7 @@ extension Mobject {
 
     /// An open polyline through the given scene-space points.
     public static func polyline(_ points: [Vec2]) -> Mobject {
+        precondition(points.count >= 2, "A polyline needs at least 2 points")
         let path = BezierPath.polyline(points)
         let localCenter = path.boundingBoxCenter
         var mobject = Mobject(

@@ -88,6 +88,14 @@ struct MobjectTests {
         #expect(approx(square.effectiveStrokeAlpha, 0.5))
     }
 
+    @Test func outOfRangeStyleInputsAreClamped() {
+        let square = Mobject.square().stroke(.blue, width: -3).withOpacity(5)
+        #expect(square.strokeWidth == 0)
+        #expect(square.effectiveStrokeAlpha == 1)
+        let negative = Mobject.square().withOpacity(-1)
+        #expect(negative.effectiveStrokeAlpha == 0)
+    }
+
     @Test func triangleIsRegularPolygonWithThreeSides() {
         let triangle = Mobject.triangle(radius: 1)
         #expect(triangle.path.curveCount == 3)

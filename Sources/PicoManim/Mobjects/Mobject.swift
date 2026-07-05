@@ -62,7 +62,7 @@ public struct Mobject: Identifiable, Sendable, Hashable {
         self.path = path
         self.transform = transform
         self.strokeColor = strokeColor
-        self.strokeWidth = strokeWidth
+        self.strokeWidth = Swift.max(0, strokeWidth)
         self.fillColor = fillColor
         self.opacity = 1
         self.strokeStart = 0
@@ -83,14 +83,16 @@ public struct Mobject: Identifiable, Sendable, Hashable {
         path.transformed(by: transform)
     }
 
-    /// Effective stroke alpha after all opacity factors.
+    /// Effective stroke alpha after all opacity factors, clamped to 0...1
+    /// so out-of-range inputs (e.g. custom rate functions that overshoot)
+    /// can't reach the renderer.
     public var effectiveStrokeAlpha: Double {
-        strokeColor.alpha * opacity
+        clamp(strokeColor.alpha * opacity, 0...1)
     }
 
-    /// Effective fill alpha after all opacity factors.
+    /// Effective fill alpha after all opacity factors, clamped to 0...1.
     public var effectiveFillAlpha: Double {
-        fillColor.alpha * fillOpacityFactor * opacity
+        clamp(fillColor.alpha * fillOpacityFactor * opacity, 0...1)
     }
 
     // MARK: - Fluent modifiers (identity-preserving)
@@ -99,7 +101,7 @@ public struct Mobject: Identifiable, Sendable, Hashable {
     public func stroke(_ color: ManimColor, width: Double? = nil) -> Mobject {
         var copy = self
         copy.strokeColor = color
-        if let width { copy.strokeWidth = width }
+        if let width { copy.strokeWidth = Swift.max(0, width) }
         return copy
     }
 
