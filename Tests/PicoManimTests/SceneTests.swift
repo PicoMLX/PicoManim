@@ -127,6 +127,39 @@ struct SceneTimelineTests {
         #expect(approx(end.position, Vec2(0, 2)))
     }
 
+    @Test func createAfterFadeOutRevealsAgain() throws {
+        var scene = ManimScene()
+        let circle = Mobject.circle(radius: 1)
+        scene.play(.create(circle, duration: 1))
+        scene.play(.fadeOut(circle, duration: 1))
+        scene.play(.create(circle, duration: 1))
+
+        // create is a revealing animation: it restores opacity while it
+        // redraws the outline.
+        let end = try #require(scene.snapshot(at: 3).first)
+        #expect(end.opacity == 1)
+        #expect(end.strokeEnd == 1)
+    }
+
+    @Test func zeroShiftFadeComposesWithParallelMotion() throws {
+        var scene = ManimScene()
+        let dot = Mobject.dot(at: .zero)
+        scene.add(dot)
+        scene.play(
+            .shift(dot, by: Vec2(1, 0), duration: 1, rate: .linear),
+            .fadeOut(dot, duration: 1, rate: .linear)
+        )
+
+        // The zero-shift fade drives only opacity; the parallel shift keeps
+        // ownership of the position.
+        let mid = try #require(scene.snapshot(at: 0.5).first)
+        #expect(approx(mid.position, Vec2(0.5, 0)))
+        #expect(approx(mid.opacity, 0.5))
+        let end = try #require(scene.snapshot(at: 1).first)
+        #expect(approx(end.position, Vec2(1, 0)))
+        #expect(end.opacity == 0)
+    }
+
     @Test func fadeInAfterTransformKeepsTransformedOpacity() throws {
         var scene = ManimScene()
         let circle = Mobject.circle(radius: 1)

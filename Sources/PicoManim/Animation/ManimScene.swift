@@ -242,6 +242,10 @@ public struct ManimScene: Sendable {
             end.strokeStart = 0
             end.strokeEnd = 1
             end.fillOpacityFactor = 1
+            // Like fadeIn, create is a revealing animation: if the object was
+            // fully transparent (e.g. after a fadeOut), restore its opacity
+            // as the outline redraws.
+            end.opacity = preGroup.opacity > 0 ? preGroup.opacity : animation.mobject.opacity
         case .fadeIn(let shift):
             // Fade back to the opacity the object currently has (it may have
             // changed via a transform). If it is currently fully transparent
@@ -288,9 +292,17 @@ public struct ManimScene: Sendable {
             // Fill fades in over the second half of the draw.
             let fillProgress = clamp((p - 0.5) * 2, 0...1)
             state.fillOpacityFactor = lerp(a.fillOpacityFactor, b.fillOpacityFactor, fillProgress)
-        case .fadeIn, .fadeOut:
+            // No-op for a plain create (both poles share the same opacity);
+            // restores visibility when re-creating a faded-out object.
             state.opacity = lerp(a.opacity, b.opacity, p)
-            state.transform.translation = Vec2.lerp(a.transform.translation, b.transform.translation, p)
+        case .fadeIn(let shift), .fadeOut(let shift):
+            state.opacity = lerp(a.opacity, b.opacity, p)
+            // A zero-shift fade owns only opacity, so it composes with
+            // parallel motion on the same mobject instead of pinning the
+            // position to its own (stationary) poles.
+            if shift != .zero {
+                state.transform.translation = Vec2.lerp(a.transform.translation, b.transform.translation, p)
+            }
         case .shift, .move:
             state.transform.translation = Vec2.lerp(a.transform.translation, b.transform.translation, p)
         case .rotate:
