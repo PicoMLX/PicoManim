@@ -37,6 +37,23 @@ struct SceneTimelineTests {
         #expect(after.opacity == 1)
     }
 
+    @Test func reAddingAppliesThePassedState() throws {
+        var scene = ManimScene()
+        let dot = Mobject.dot(at: .zero)
+        scene.add(dot)
+        scene.wait(1)
+        scene.add(dot.moved(to: Vec2(2, 0)).fill(.red, opacity: 1))
+
+        // Before the re-add the mobject still has its original state...
+        let before = try #require(scene.snapshot(at: 0.5).first)
+        #expect(approx(before.position, Vec2(0, 0)))
+        // ...and from the re-add on it shows the passed state.
+        let after = try #require(scene.snapshot(at: 1).first)
+        #expect(approx(after.position, Vec2(2, 0)))
+        #expect(approx(after.fillColor.red, ManimColor.red.red, tolerance: 1e-9))
+        #expect(after.opacity == 1)
+    }
+
     @Test func createRevealsStrokeThenFill() throws {
         var scene = ManimScene()
         let circle = Mobject.circle(radius: 1).fill(.blue, opacity: 0.8)

@@ -65,13 +65,25 @@ public struct ManimScene: Sendable {
     // MARK: - Building
 
     /// Shows mobjects instantly at the current point in the timeline.
+    /// Re-adding an already tracked mobject applies the passed state
+    /// (position, style, geometry) instantly.
     public mutating func add(_ mobjects: Mobject...) {
         add(mobjects)
     }
 
     /// Shows mobjects instantly at the current point in the timeline.
+    /// Re-adding an already tracked mobject applies the passed state
+    /// (position, style, geometry) instantly.
     public mutating func add(_ mobjects: [Mobject]) {
-        play(mobjects.map { .fadeIn($0, duration: 0, rate: .linear) })
+        play(mobjects.map { mobject in
+            // A zero-duration fadeIn only drives opacity, so re-adding a
+            // tracked mobject routes through an instant morph instead —
+            // otherwise the passed state would be silently dropped.
+            if currentStates[mobject.id] != nil {
+                return .transform(mobject, into: mobject, duration: 0, rate: .linear)
+            }
+            return .fadeIn(mobject, duration: 0, rate: .linear)
+        })
     }
 
     /// Plays animations in parallel, then advances the timeline by the
