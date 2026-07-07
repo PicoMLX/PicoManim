@@ -81,7 +81,15 @@ extension BezierPath {
 
             let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
             let fontKey = NSAttributedString.Key(kCTFontAttributeName as String)
-            let runFont = attributes?[fontKey] as? CTFont ?? font
+            // `as? CTFont` is rejected by the compiler ("conditional downcast
+            // to CoreFoundation type will always succeed"), so type-check via
+            // CFGetTypeID before the unconditional cast.
+            let runFont: CTFont
+            if let value = attributes?[fontKey], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() {
+                runFont = value as! CTFont
+            } else {
+                runFont = font
+            }
 
             for index in 0..<glyphCount {
                 guard let glyphPath = CTFontCreatePathForGlyph(runFont, glyphs[index], nil) else {
