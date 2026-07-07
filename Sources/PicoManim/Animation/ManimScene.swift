@@ -96,6 +96,12 @@ public struct ManimScene: Sendable {
         play(animations)
     }
 
+    /// Plays several animation lists (for example group animations, which
+    /// expand to one animation per child) together in one parallel group.
+    public mutating func play(_ animationGroups: [ManimAnimation]...) {
+        play(animationGroups.flatMap { $0 })
+    }
+
     /// Plays animations in parallel, then advances the timeline by the
     /// longest of their durations.
     public mutating func play(_ animations: [ManimAnimation]) {
@@ -110,6 +116,7 @@ public struct ManimScene: Sendable {
 
         for animation in animations {
             let id = animation.mobject.id
+            let entryStart = groupStart + max(0, animation.delay)
             let startState: Mobject
             // The state the mobject is in as this group begins; the authored
             // value for a mobject this play call introduces.
@@ -135,7 +142,7 @@ public struct ManimScene: Sendable {
                     // instantly (like `add`) and animate from there.
                     let visible = animation.mobject
                     entries.append(Entry(
-                        startTime: groupStart,
+                        startTime: entryStart,
                         duration: 0,
                         rate: .linear,
                         kind: .fadeIn(shift: .zero),
@@ -149,7 +156,7 @@ public struct ManimScene: Sendable {
             }
 
             var entry = Entry(
-                startTime: groupStart,
+                startTime: entryStart,
                 duration: max(0, animation.duration),
                 rate: animation.rate,
                 kind: animation.kind,
@@ -187,7 +194,7 @@ public struct ManimScene: Sendable {
             if let opacity = currentStates[id]?.opacity, opacity > 0 {
                 lastVisibleOpacities[id] = opacity
             }
-            groupDuration = max(groupDuration, entry.duration)
+            groupDuration = max(groupDuration, max(0, animation.delay) + entry.duration)
         }
         duration = groupStart + groupDuration
     }
@@ -288,8 +295,14 @@ public struct ManimScene: Sendable {
             end.transform.translation = point
         case .rotate(let angle):
             end.transform.rotation += angle
+        case .rotateAbout(let pivot, let angle):
+            end.transform.rotation += angle
+            end.transform.translation = pivot + (start.transform.translation - pivot).rotated(by: angle)
         case .scale(let factor):
             end.transform.scale *= factor
+        case .scaleAbout(let pivot, let factor):
+            end.transform.scale *= factor
+            end.transform.translation = pivot + (start.transform.translation - pivot) * factor
         case .transform(let target):
             end.path = target.path
             end.transform = target.transform
@@ -333,8 +346,18 @@ public struct ManimScene: Sendable {
             state.transform.translation = Vec2.lerp(a.transform.translation, b.transform.translation, p)
         case .rotate:
             state.transform.rotation = lerp(a.transform.rotation, b.transform.rotation, p)
+        case .rotateAbout(let pivot, let angle):
+            state.transform.rotation = lerp(a.transform.rotation, b.transform.rotation, p)
+            // The position orbits the pivot along a circular arc, not the
+            // chord between the poles.
+            state.transform.translation = pivot
+                + (a.transform.translation - pivot).rotated(by: angle * p)
         case .scale:
             state.transform.scale = Vec2.lerp(a.transform.scale, b.transform.scale, p)
+        case .scaleAbout(let pivot, let factor):
+            state.transform.scale = Vec2.lerp(a.transform.scale, b.transform.scale, p)
+            state.transform.translation = pivot
+                + (a.transform.translation - pivot) * lerp(1, factor, p)
         case .transform:
             // At the poles, return the exact (unaligned) paths: the aligned
             // copies are structurally padded, and for an empty target the

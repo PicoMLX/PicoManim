@@ -19,8 +19,14 @@ public struct ManimAnimation: Sendable {
         case move(to: Vec2)
         /// Rotates the mobject about its own center.
         case rotate(by: Double)
+        /// Rotates the mobject about a fixed scene point: its rotation
+        /// animates while its position orbits the pivot along an arc.
+        case rotateAbout(pivot: Vec2, by: Double)
         /// Scales the mobject about its own center.
         case scale(by: Double)
+        /// Scales the mobject about a fixed scene point: its scale animates
+        /// while its position moves radially from the pivot.
+        case scaleAbout(pivot: Vec2, by: Double)
         /// Morphs the mobject's shape and style into the target's.
         case transform(into: Mobject)
     }
@@ -33,12 +39,22 @@ public struct ManimAnimation: Sendable {
     /// Duration in seconds.
     public var duration: Double
     public var rate: RateFunction
+    /// Seconds after the play group starts before this animation begins.
+    /// Group factories use this to stagger children (lag).
+    public var delay: Double
 
-    public init(mobject: Mobject, kind: Kind, duration: Double = 1, rate: RateFunction = .smooth) {
+    public init(
+        mobject: Mobject,
+        kind: Kind,
+        duration: Double = 1,
+        rate: RateFunction = .smooth,
+        delay: Double = 0
+    ) {
         self.mobject = mobject
         self.kind = kind
         self.duration = duration
         self.rate = rate
+        self.delay = delay
     }
 
     // MARK: - Factories
@@ -92,24 +108,32 @@ public struct ManimAnimation: Sendable {
         ManimAnimation(mobject: mobject, kind: .move(to: point), duration: duration, rate: rate)
     }
 
-    /// Rotates the mobject by `angle` radians about its own center.
+    /// Rotates the mobject by `angle` radians. Without `about`, rotation is
+    /// about the mobject's own center; with a pivot, its position also
+    /// orbits the pivot along a circular arc.
     public static func rotate(
         _ mobject: Mobject,
         by angle: Double,
+        about pivot: Vec2? = nil,
         duration: Double = 1,
         rate: RateFunction = .smooth
     ) -> ManimAnimation {
-        ManimAnimation(mobject: mobject, kind: .rotate(by: angle), duration: duration, rate: rate)
+        let kind: Kind = pivot.map { .rotateAbout(pivot: $0, by: angle) } ?? .rotate(by: angle)
+        return ManimAnimation(mobject: mobject, kind: kind, duration: duration, rate: rate)
     }
 
-    /// Scales the mobject by `factor` about its own center.
+    /// Scales the mobject by `factor`. Without `about`, scaling is about
+    /// the mobject's own center; with a pivot, its position also moves
+    /// radially from the pivot.
     public static func scale(
         _ mobject: Mobject,
         by factor: Double,
+        about pivot: Vec2? = nil,
         duration: Double = 1,
         rate: RateFunction = .smooth
     ) -> ManimAnimation {
-        ManimAnimation(mobject: mobject, kind: .scale(by: factor), duration: duration, rate: rate)
+        let kind: Kind = pivot.map { .scaleAbout(pivot: $0, by: factor) } ?? .scale(by: factor)
+        return ManimAnimation(mobject: mobject, kind: kind, duration: duration, rate: rate)
     }
 
     /// Morphs the mobject into `target`, interpolating shape, placement,
