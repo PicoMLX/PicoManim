@@ -195,7 +195,7 @@ struct GroupAnimationTests {
         scene.add(solo)
         scene.play(
             .shift(group, by: Vec2(1, 0), duration: 1, rate: .linear),
-            [.shift(solo, by: Vec2(0, 1), duration: 1, rate: .linear)]
+            .shift(solo, by: Vec2(0, 1), duration: 1, rate: .linear)
         )
         let end = scene.snapshot(at: 1)
         #expect(approx(end[0].position, Vec2(1, 0)))
@@ -211,6 +211,10 @@ struct GroupAnimationTests {
         // Corner-to-corner placement instead of an overlapping interior hit.
         let neighbor = Mobject.square(sideLength: 2).nextTo(square, direction: Vec2(1, 1), gap: 0)
         #expect(approx(neighbor.center, Vec2(2, 2)))
+        // Non-square boxes still name the true corner (Manim's get_corner).
+        let wide = Mobject.rectangle(width: 10, height: 2)
+        #expect(approx(wide.edge(Vec2(1, 1)), Vec2(5, 1)))
+        #expect(approx(wide.edge(unitDiagonal), Vec2(5, 1)))
     }
 
     @Test func groupMoveResolvesFromTheLiveCenter() throws {
@@ -259,5 +263,8 @@ struct GroupAnimationTests {
         #expect(approx(mid.position, Vec2(2.5, 0)))
         let end = try #require(scene.snapshot(at: 2).first)
         #expect(approx(end.position, Vec2(5, 0)))
+        // The build cursor agrees with the timeline, so follow-up plays
+        // start from the delayed animation's end, not the sibling's.
+        #expect(approx(scene.state(of: dot)?.position ?? Vec2(-1, -1), Vec2(5, 0)))
     }
 }

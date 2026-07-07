@@ -102,6 +102,13 @@ public struct ManimScene: Sendable {
         play(animationGroups.flatMap { $0 })
     }
 
+    /// Plays a group animation together with individual animations in one
+    /// parallel group: `scene.play(.create(row), .shift(dot, by: .up))`.
+    /// For arbitrary mixes, concatenate arrays: `play(.create(a) + [b, c])`.
+    public mutating func play(_ animationGroup: [ManimAnimation], _ animations: ManimAnimation...) {
+        play(animationGroup + animations)
+    }
+
     /// Plays animations in parallel, then advances the timeline by the
     /// longest of their durations.
     public mutating func play(_ animations: [ManimAnimation]) {
@@ -190,18 +197,6 @@ public struct ManimScene: Sendable {
             )
             newEntries.append(entry)
 
-            // Advance the build cursor to the state the animation actually
-            // leaves behind (for rate functions like `thereAndBack` this is
-            // not the end pole). Applied on top of the accumulated state so
-            // sibling animations in this group all contribute.
-            currentStates[id] = Self.apply(
-                entry,
-                easedProgress: entry.rate.apply(1),
-                to: currentStates[id] ?? startState
-            )
-            if let opacity = currentStates[id]?.opacity, opacity > 0 {
-                lastVisibleOpacities[id] = opacity
-            }
             groupDuration = max(groupDuration, max(0, animation.delay) + entry.duration)
         }
         // Delayed animations can start after siblings listed later in the
@@ -216,6 +211,22 @@ public struct ManimScene: Sendable {
             ($0.element.startTime, $0.offset) < ($1.element.startTime, $1.offset)
         }
         entries.append(contentsOf: indexed.map { $0.element })
+        // Advance the build cursor in the same chronological order the
+        // snapshot fold uses (for rate functions like `thereAndBack` the
+        // state left behind is rate(1), not the end pole), so `state(of:)`
+        // and later plays agree with what the timeline actually shows when
+        // delayed siblings drive the same property.
+        for (_, entry) in indexed {
+            let id = entry.targetID
+            currentStates[id] = Self.apply(
+                entry,
+                easedProgress: entry.rate.apply(1),
+                to: currentStates[id] ?? entry.startState
+            )
+            if let opacity = currentStates[id]?.opacity, opacity > 0 {
+                lastVisibleOpacities[id] = opacity
+            }
+        }
         duration = groupStart + groupDuration
     }
 

@@ -28,23 +28,18 @@ extension Mobject {
         return (box.min + box.max) / 2
     }
 
-    /// The point where a ray from the center in `direction` exits the
-    /// bounding box: `Vec2(1, 0)` gives the middle of the right edge, and
-    /// any diagonal - Manim-style `Vec2(1, 1)` or a unit vector alike -
-    /// gives the corner, never a point inside the box. The direction's
-    /// magnitude does not matter.
+    /// The Manim-style critical point of the bounding box in `direction`:
+    /// each axis independently picks the box's min, center, or max by the
+    /// sign of that direction component. `Vec2(1, 0)` is the middle of the
+    /// right edge; any diagonal - `Vec2(1, 1)` or a unit vector alike -
+    /// is the true corner, even for non-square boxes. Magnitude is ignored.
     public func edge(_ direction: Vec2) -> Vec2 {
         guard let box = boundingBox else { return position }
         let half = (box.max - box.min) / 2
-        // How many direction-lengths fit inside the box per axis; the
-        // tighter (larger) ratio decides where the ray exits. A zero-extent
-        // axis with a nonzero direction component pins the ray to the
-        // center along both axes (the limit of an ever-thinner box).
-        let ratioX = half.x > 0 ? abs(direction.x) / half.x : (direction.x == 0 ? 0 : .infinity)
-        let ratioY = half.y > 0 ? abs(direction.y) / half.y : (direction.y == 0 ? 0 : .infinity)
-        let maxRatio = Swift.max(ratioX, ratioY)
-        guard maxRatio > 0, maxRatio.isFinite else { return center }
-        return center + direction / maxRatio
+        func component(_ d: Double, _ h: Double) -> Double {
+            d > 0 ? h : (d < 0 ? -h : 0)
+        }
+        return center + Vec2(component(direction.x, half.x), component(direction.y, half.y))
     }
 
     /// A copy placed beside `other`: shifted so this mobject's facing edge
