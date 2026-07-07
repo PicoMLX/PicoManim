@@ -1,16 +1,25 @@
 import Foundation
 
-/// Evenly spaced tick values covering `range` at multiples of `spacing`.
+/// Evenly spaced tick values covering `range` at multiples of `spacing`,
+/// clamped into the range so floating-point drift can't place a tick just
+/// past an endpoint. Advances by integer tick index, so ranges at huge
+/// offsets (where `value + spacing` would round back to `value`) terminate;
+/// ranges whose tick indices can't be represented exactly, or that would
+/// produce an absurd number of ticks, return no ticks at all.
 private func tickValues(in range: ClosedRange<Double>, spacing: Double) -> [Double] {
     guard spacing > 0 else { return [] }
     let epsilon = spacing * 1e-9
-    var value = (range.lowerBound / spacing - 1e-9).rounded(.up) * spacing
-    var values: [Double] = []
-    while value <= range.upperBound + epsilon {
-        values.append(value)
-        value += spacing
+    let firstIndex = ((range.lowerBound - epsilon) / spacing).rounded(.up)
+    let lastIndex = ((range.upperBound + epsilon) / spacing).rounded(.down)
+    // Beyond 2^53 the index math itself loses integers; and a range that
+    // wants outlandishly many ticks is a degenerate ask. No ticks, no hang.
+    let indexLimit = 9e15
+    guard firstIndex <= lastIndex,
+          abs(firstIndex) < indexLimit, abs(lastIndex) < indexLimit,
+          lastIndex - firstIndex < 100_000 else { return [] }
+    return (Int(firstIndex)...Int(lastIndex)).map { index in
+        clamp(Double(index) * spacing, range)
     }
-    return values
 }
 
 extension MobjectGroup {
@@ -62,8 +71,9 @@ extension MobjectGroup {
 /// scene.play(.create(axes.plot { $0 * $0 }))
 /// ```
 ///
-/// The axes cross at value (0, 0) when the ranges include zero, and hug
-/// the lower edges otherwise (like Manim).
+/// The axes cross at value (0, 0) when the ranges include zero; otherwise
+/// each axis hugs the edge nearest the missing origin (the lower edge when
+/// the range sits above zero, the upper edge when it sits below).
 public struct Axes: Sendable {
     public let xRange: ClosedRange<Double>
     public let yRange: ClosedRange<Double>
@@ -74,12 +84,22 @@ public struct Axes: Sendable {
     /// The axis lines and ticks, ready to add or animate.
     public let mobjects: MobjectGroup
 
+    // The value-to-scene mapping, precomputed once: scene = origin +
+    // (value - lowerBound) * factor per axis. A degenerate (zero-span)
+    // range maps every value to the middle of the area instead of
+    // dividing by zero; genuinely tiny spans keep their exact factor.
+    private let xOrigin: Double
+    private let yOrigin: Double
+    private let xFactor: Double
+    private let yFactor: Double
+
     public init(
         x xRange: ClosedRange<Double>,
         y yRange: ClosedRange<Double>,
         size: Vec2 = Vec2(8, 5),
         at center: Vec2 = .zero,
-        tickSpacing: Double = 1,
+        xTickSpacing: Double = 1,
+        yTickSpacing: Double = 1,
         tickSize: Double = 0.1,
         color: ManimColor = .lightGray
     ) {
@@ -88,19 +108,28 @@ public struct Axes: Sendable {
         self.size = size
         self.center = center
 
-        let xSpan = Swift.max(xRange.upperBound - xRange.lowerBound, 1e-12)
-        let ySpan = Swift.max(yRange.upperBound - yRange.lowerBound, 1e-12)
+        let xSpan = xRange.upperBound - xRange.lowerBound
+        let ySpan = yRange.upperBound - yRange.lowerBound
         let areaMin = center - size / 2
+        let xFactor = xSpan > 0 ? size.x / xSpan : 0
+        let yFactor = ySpan > 0 ? size.y / ySpan : 0
+        let xOrigin = xSpan > 0 ? areaMin.x : center.x
+        let yOrigin = ySpan > 0 ? areaMin.y : center.y
+        self.xFactor = xFactor
+        self.yFactor = yFactor
+        self.xOrigin = xOrigin
+        self.yOrigin = yOrigin
         func scenePoint(_ x: Double, _ y: Double) -> Vec2 {
             Vec2(
-                areaMin.x + (x - xRange.lowerBound) / xSpan * size.x,
-                areaMin.y + (y - yRange.lowerBound) / ySpan * size.y
+                xOrigin + (x - xRange.lowerBound) * xFactor,
+                yOrigin + (y - yRange.lowerBound) * yFactor
             )
         }
 
-        // Axis lines cross at value zero when available, else at the edges.
-        let axisY = yRange.contains(0) ? 0 : yRange.lowerBound
-        let axisX = xRange.contains(0) ? 0 : xRange.lowerBound
+        // Axis lines cross at value zero when available; otherwise they hug
+        // the edge nearest the missing origin.
+        let axisY = yRange.contains(0) ? 0 : (yRange.upperBound < 0 ? yRange.upperBound : yRange.lowerBound)
+        let axisX = xRange.contains(0) ? 0 : (xRange.upperBound < 0 ? xRange.upperBound : xRange.lowerBound)
         var mobjects = [
             Mobject.line(
                 from: scenePoint(xRange.lowerBound, axisY),
@@ -111,7 +140,7 @@ public struct Axes: Sendable {
                 to: scenePoint(axisX, yRange.upperBound)
             ).stroke(color)
         ]
-        for value in tickValues(in: xRange, spacing: tickSpacing) {
+        for value in tickValues(in: xRange, spacing: xTickSpacing) {
             let anchor = scenePoint(value, axisY)
             mobjects.append(
                 Mobject.line(
@@ -120,7 +149,7 @@ public struct Axes: Sendable {
                 ).stroke(color)
             )
         }
-        for value in tickValues(in: yRange, spacing: tickSpacing) {
+        for value in tickValues(in: yRange, spacing: yTickSpacing) {
             let anchor = scenePoint(axisX, value)
             mobjects.append(
                 Mobject.line(
@@ -134,18 +163,18 @@ public struct Axes: Sendable {
 
     /// The scene position of the value coordinate `(x, y)`.
     public func point(x: Double, y: Double) -> Vec2 {
-        let xSpan = Swift.max(xRange.upperBound - xRange.lowerBound, 1e-12)
-        let ySpan = Swift.max(yRange.upperBound - yRange.lowerBound, 1e-12)
-        let areaMin = center - size / 2
-        return Vec2(
-            areaMin.x + (x - xRange.lowerBound) / xSpan * size.x,
-            areaMin.y + (y - yRange.lowerBound) / ySpan * size.y
+        Vec2(
+            xOrigin + (x - xRange.lowerBound) * xFactor,
+            yOrigin + (y - yRange.lowerBound) * yFactor
         )
     }
 
     /// The graph of `function` sampled uniformly across `range` (the full
     /// x-range by default) as a polyline mobject in scene coordinates.
     /// Values outside the y-range are drawn where they land, not clipped.
+    /// Non-finite samples (a pole, a domain error) split the graph into
+    /// separate branches instead of poisoning the geometry; a graph with no
+    /// drawable branch comes back with an empty path.
     public func plot(
         _ function: (Double) -> Double,
         in range: ClosedRange<Double>? = nil,
@@ -156,10 +185,32 @@ public struct Axes: Sendable {
         let domain = range ?? xRange
         let count = Swift.max(samples, 2)
         let step = (domain.upperBound - domain.lowerBound) / Double(count - 1)
-        let points = (0..<count).map { index -> Vec2 in
+        // Consecutive finite samples form runs; each run becomes one open
+        // subpath, so a sampled pole separates the branches around it.
+        var runs: [[Vec2]] = [[]]
+        for index in 0..<count {
             let x = domain.lowerBound + Double(index) * step
-            return point(x: x, y: function(x))
+            let y = function(x)
+            if y.isFinite {
+                runs[runs.count - 1].append(point(x: x, y: y))
+            } else if !(runs.last?.isEmpty ?? true) {
+                runs.append([])
+            }
         }
-        return Mobject.polyline(points).stroke(color, width: strokeWidth)
+        let subpaths = runs.filter { $0.count >= 2 }.map { run in
+            BezierPath.Subpath(
+                curves: zip(run, run.dropFirst()).map { CubicCurve.line(from: $0, to: $1) },
+                isClosed: false
+            )
+        }
+        guard !subpaths.isEmpty else {
+            return Mobject(path: BezierPath(subpaths: []), strokeColor: color)
+                .stroke(color, width: strokeWidth)
+        }
+        let path = BezierPath(subpaths: subpaths)
+        let localCenter = path.boundingBoxCenter
+        var graph = Mobject(path: path.mapPoints { $0 - localCenter }, strokeColor: color)
+        graph.position = localCenter
+        return graph.stroke(color, width: strokeWidth)
     }
 }
