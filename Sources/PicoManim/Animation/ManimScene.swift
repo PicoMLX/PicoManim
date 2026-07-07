@@ -59,7 +59,7 @@ public struct ManimScene: Sendable {
 
     /// A registered per-frame modifier: a pure function of time applied to
     /// the target's animated state during evaluation.
-    struct Updater: Sendable {
+    private struct Updater: Sendable {
         var targetID: Mobject.ID
         var startTime: Double
         var endTime: Double?
@@ -312,7 +312,8 @@ public struct ManimScene: Sendable {
         }
         // Updaters layer on top of the animated state, in registration order.
         for updater in updaters {
-            guard t >= updater.startTime, updater.endTime.map({ t <= $0 }) ?? true else { continue }
+            guard t >= updater.startTime else { continue }
+            if let endTime = updater.endTime, t > endTime { continue }
             if let current = states[updater.targetID] {
                 states[updater.targetID] = updater.update(t, current)
             }
