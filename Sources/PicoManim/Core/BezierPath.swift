@@ -282,6 +282,11 @@ public struct BezierPath: Sendable, Hashable {
 
     /// Whether both paths have the same subpath count and the same curve
     /// count in every subpath, i.e. they can be interpolated point-for-point.
+    ///
+    /// Deliberately ignores `isClosed`: ``aligned(with:)`` equalizes counts
+    /// but not closedness, so a closedness check here could never be
+    /// satisfied by alignment. ``interpolate(_:_:_:)`` treats a mixed pair
+    /// as open instead.
     public func structurallyMatches(_ other: BezierPath) -> Bool {
         guard subpaths.count == other.subpaths.count else { return false }
         for i in subpaths.indices where subpaths[i].curves.count != other.subpaths[i].curves.count {
@@ -297,16 +302,18 @@ public struct BezierPath: Sendable, Hashable {
     public static func interpolate(_ a: BezierPath, _ b: BezierPath, _ t: Double) -> BezierPath {
         if t <= 0 { return a }
         if t >= 1 { return b }
-        guard a.structurallyMatches(b) else {
-            let (alignedA, alignedB) = a.aligned(with: b)
-            return interpolate(alignedA, alignedB, t)
-        }
+        // Align mismatched inputs on the fly. Not recursive on purpose:
+        // aligned output matches structurally by construction, but going
+        // through the guard again would turn any future mismatch between
+        // `aligned(with:)` and `structurallyMatches` into infinite
+        // recursion instead of a slightly padded interpolation.
+        let (pa, pb) = a.structurallyMatches(b) ? (a, b) : a.aligned(with: b)
         var result: [Subpath] = []
-        let subpathCount = Swift.min(a.subpaths.count, b.subpaths.count)
+        let subpathCount = Swift.min(pa.subpaths.count, pb.subpaths.count)
         result.reserveCapacity(subpathCount)
         for i in 0..<subpathCount {
-            let sa = a.subpaths[i]
-            let sb = b.subpaths[i]
+            let sa = pa.subpaths[i]
+            let sb = pb.subpaths[i]
             let curveCount = Swift.min(sa.curves.count, sb.curves.count)
             var curves: [CubicCurve] = []
             curves.reserveCapacity(curveCount)
@@ -386,8 +393,9 @@ extension BezierPath.Subpath {
 
     /// For a closed subpath with the same curve count as `reference`: the
     /// cyclic rotation of the curve list whose matched start points travel
-    /// the least to the reference's, so a morph rotates as little as
-    /// possible. Returns `self` unchanged for open or mismatched subpaths.
+    /// the least (by summed squared distance) to the reference's, so a
+    /// morph rotates as little as possible. Returns `self` unchanged for
+    /// open or mismatched subpaths.
     public func rotatedToMinimizeTravel(against reference: BezierPath.Subpath) -> BezierPath.Subpath {
         let count = curves.count
         guard isClosed, reference.isClosed, count > 1, reference.curves.count == count else {
@@ -398,7 +406,11 @@ extension BezierPath.Subpath {
         for offset in 0..<count {
             var cost = 0.0
             for i in 0..<count {
-                cost += (reference.curves[i].p0 - curves[(i + offset) % count].p0).length
+                let diff = reference.curves[i].p0 - curves[(i + offset) % count].p0
+                // Squared distance: no hypot in the O(n^2) loop, and least
+                // squares penalizes single large travels, which is what a
+                // twist-free morph wants minimized.
+                cost += diff.x * diff.x + diff.y * diff.y
                 if cost >= bestCost { break }
             }
             if cost < bestCost {
