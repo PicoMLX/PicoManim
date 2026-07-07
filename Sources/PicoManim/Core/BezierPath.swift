@@ -269,19 +269,38 @@ public struct BezierPath: Sendable, Hashable {
             // degenerate curves don't fly in from the origin during a morph.
             let anchorA = a[i].curves.first?.p0 ?? b[i].curves.first?.p0 ?? .zero
             let anchorB = b[i].curves.first?.p0 ?? a[i].curves.first?.p0 ?? .zero
-            a[i] = a[i].subdividedEvenly(to: target, fallbackAnchor: anchorA)
-            b[i] = b[i].subdividedEvenly(to: target, fallbackAnchor: anchorB)
+            a[i] = a[i].subdividedWeighted(to: target, fallbackAnchor: anchorA)
+            b[i] = b[i].subdividedWeighted(to: target, fallbackAnchor: anchorB)
+            // For closed pairs, rotate the counterpart's start point so
+            // matched control points travel the least during the morph.
+            if a[i].isClosed && b[i].isClosed && a[i].curves.count == b[i].curves.count {
+                b[i] = b[i].rotatedToMinimizeTravel(against: a[i])
+            }
         }
         return (BezierPath(subpaths: a), BezierPath(subpaths: b))
     }
 
-    /// Interpolates between two structurally aligned paths (see
-    /// ``aligned(with:)``). The inputs should have matching structure;
-    /// subpaths and curves beyond the shorter path's count are dropped
-    /// for 0 < t < 1.
+    /// Whether both paths have the same subpath count and the same curve
+    /// count in every subpath, i.e. they can be interpolated point-for-point.
+    public func structurallyMatches(_ other: BezierPath) -> Bool {
+        guard subpaths.count == other.subpaths.count else { return false }
+        for i in subpaths.indices where subpaths[i].curves.count != other.subpaths[i].curves.count {
+            return false
+        }
+        return true
+    }
+
+    /// Interpolates between two paths. Structurally aligned inputs (see
+    /// ``aligned(with:)``) interpolate point-for-point; mismatched inputs
+    /// are aligned on the fly, so the result is always total — pre-align
+    /// once when interpolating the same pair repeatedly.
     public static func interpolate(_ a: BezierPath, _ b: BezierPath, _ t: Double) -> BezierPath {
         if t <= 0 { return a }
         if t >= 1 { return b }
+        guard a.structurallyMatches(b) else {
+            let (alignedA, alignedB) = a.aligned(with: b)
+            return interpolate(alignedA, alignedB, t)
+        }
         var result: [Subpath] = []
         let subpathCount = Swift.min(a.subpaths.count, b.subpaths.count)
         result.reserveCapacity(subpathCount)
@@ -327,5 +346,68 @@ extension BezierPath.Subpath {
             result.append(contentsOf: curve.subdivided(into: pieces))
         }
         return BezierPath.Subpath(curves: result, isClosed: isClosed)
+    }
+
+    /// Like ``subdividedEvenly(to:fallbackAnchor:)``, but distributes the
+    /// extra splits in proportion to each curve's arc length, so matched
+    /// pieces cover similar fractions of the outline and morphs progress
+    /// evenly along the shape instead of bunching on short segments.
+    public func subdividedWeighted(to target: Int, fallbackAnchor: Vec2 = .zero) -> BezierPath.Subpath {
+        let count = curves.count
+        guard target > count else { return self }
+        guard count > 0 else {
+            return subdividedEvenly(to: target, fallbackAnchor: fallbackAnchor)
+        }
+        let lengths = curves.map { Swift.max($0.approximateLength, 1e-12) }
+        let total = lengths.reduce(0, +)
+        // Every curve keeps at least one piece; hand out the extras one at a
+        // time to the curve furthest below its length-proportional share.
+        var pieces = Array(repeating: 1, count: count)
+        let shares = lengths.map { $0 / total * Double(target) }
+        for _ in 0..<(target - count) {
+            var best = 0
+            var bestDeficit = -Double.infinity
+            for i in 0..<count {
+                let deficit = shares[i] - Double(pieces[i])
+                if deficit > bestDeficit {
+                    bestDeficit = deficit
+                    best = i
+                }
+            }
+            pieces[best] += 1
+        }
+        var result: [CubicCurve] = []
+        result.reserveCapacity(target)
+        for (i, curve) in curves.enumerated() {
+            result.append(contentsOf: curve.subdivided(into: pieces[i]))
+        }
+        return BezierPath.Subpath(curves: result, isClosed: isClosed)
+    }
+
+    /// For a closed subpath with the same curve count as `reference`: the
+    /// cyclic rotation of the curve list whose matched start points travel
+    /// the least to the reference's, so a morph rotates as little as
+    /// possible. Returns `self` unchanged for open or mismatched subpaths.
+    public func rotatedToMinimizeTravel(against reference: BezierPath.Subpath) -> BezierPath.Subpath {
+        let count = curves.count
+        guard isClosed, reference.isClosed, count > 1, reference.curves.count == count else {
+            return self
+        }
+        var bestOffset = 0
+        var bestCost = Double.infinity
+        for offset in 0..<count {
+            var cost = 0.0
+            for i in 0..<count {
+                cost += (reference.curves[i].p0 - curves[(i + offset) % count].p0).length
+                if cost >= bestCost { break }
+            }
+            if cost < bestCost {
+                bestCost = cost
+                bestOffset = offset
+            }
+        }
+        guard bestOffset != 0 else { return self }
+        let rotated = Array(curves[bestOffset...] + curves[..<bestOffset])
+        return BezierPath.Subpath(curves: rotated, isClosed: isClosed)
     }
 }

@@ -77,6 +77,18 @@ public struct CubicCurve: Sendable, Hashable {
         return pieces
     }
 
+    /// The curve's approximate arc length, measured by sampling 8 chords.
+    public var approximateLength: Double {
+        var length = 0.0
+        var previous = p0
+        for i in 1...8 {
+            let sample = point(at: Double(i) / 8)
+            length += (sample - previous).length
+            previous = sample
+        }
+        return length
+    }
+
     /// Component-wise linear interpolation between two curves.
     public static func lerp(_ a: CubicCurve, _ b: CubicCurve, _ t: Double) -> CubicCurve {
         CubicCurve(
