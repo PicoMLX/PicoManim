@@ -54,7 +54,7 @@ extension BezierPath {
     ) -> BezierPath {
         // Lay out in font points, then scale to scene units: 48 pt = 1 unit.
         let pointSize: CGFloat = 48
-        let unitsPerPoint = (fontSize / 48) / 48
+        let unitsPerPoint = (fontSize / Double(pointSize)) / Double(pointSize)
         let font: CTFont
         if let fontName {
             font = CTFontCreateWithName(fontName as CFString, pointSize, nil)
@@ -80,8 +80,8 @@ extension BezierPath {
             CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
 
             let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
-            let runFont = attributes?[NSAttributedString.Key(kCTFontAttributeName as String)]
-                .map { $0 as! CTFont } ?? font
+            let fontKey = NSAttributedString.Key(kCTFontAttributeName as String)
+            let runFont = attributes?[fontKey] as? CTFont ?? font
 
             for index in 0..<glyphCount {
                 guard let glyphPath = CTFontCreatePathForGlyph(runFont, glyphs[index], nil) else {

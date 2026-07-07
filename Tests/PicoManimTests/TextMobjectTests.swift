@@ -59,6 +59,22 @@ struct TextMobjectTests {
         #expect(!mid.isEmpty)
     }
 
+    @Test func createShowsTemporaryOutlineForStrokelessText() throws {
+        var scene = ManimScene()
+        let text = Mobject.text("Hi")
+        scene.play(.create(text, duration: 1, rate: .linear))
+        // While the outline draws in, a borrowed fill-colored stroke keeps
+        // the (stroke-less) text visible.
+        let quarter = try #require(scene.snapshot(at: 0.25).first)
+        #expect(quarter.effectiveStrokeAlpha > 0)
+        #expect(quarter.strokeWidth > 0)
+        // The temporary outline is fully gone at the end.
+        let end = try #require(scene.snapshot(at: 1).first)
+        #expect(end.strokeWidth == 0)
+        #expect(end.effectiveStrokeAlpha == 0)
+        #expect(end.effectiveFillAlpha == 1)
+    }
+
     @Test func textDrawsInWithCreate() throws {
         var scene = ManimScene()
         let text = Mobject.text("Hi")
