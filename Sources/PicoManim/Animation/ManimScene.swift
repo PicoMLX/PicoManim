@@ -113,10 +113,18 @@ public struct ManimScene: Sendable {
         // never from a sibling's end state, which would make the mobject
         // jump at the start of the group.
         var groupStartStates = currentStates
+        // Buffered so the group's entries can be appended in chronological
+        // order below, whatever order the caller listed them in.
+        var newEntries: [Entry] = []
 
         for animation in animations {
             let id = animation.mobject.id
             let entryStart = groupStart + max(0, animation.delay)
+            // Group-relative kinds carry their sibling mobjects; resolve the
+            // pivot or delta against the live scene state now, so a group
+            // animation acts on wherever the group actually is, not on the
+            // (possibly stale) group value the factory captured.
+            let kind = Self.resolvingGroupKind(animation.kind, states: groupStartStates)
             let startState: Mobject
             // The state the mobject is in as this group begins; the authored
             // value for a mobject this play call introduces.
@@ -124,24 +132,24 @@ public struct ManimScene: Sendable {
             if groupStartStates[id] != nil {
                 // Re-introducing animations (create, fadeIn) restart from a
                 // hidden version of wherever the mobject currently is.
-                startState = Self.introducedStartState(for: animation.kind, from: preGroup)
+                startState = Self.introducedStartState(for: kind, from: preGroup)
             } else {
                 // First appearance: seed time zero with a hidden state so the
                 // mobject doesn't exist on screen before this point.
-                let hidden = Self.initialState(for: animation)
+                let hidden = Self.initialState(for: kind, from: animation.mobject)
                 initialStates[id] = hidden
                 order.append(id)
                 // A sibling animation in this same group starts from the
                 // authored state, not from this animation's end.
                 groupStartStates[id] = animation.mobject
-                switch animation.kind {
+                switch kind {
                 case .create, .fadeIn:
                     startState = hidden
                 default:
                     // Non-revealing animation on a brand-new mobject: show it
                     // instantly (like `add`) and animate from there.
                     let visible = animation.mobject
-                    entries.append(Entry(
+                    newEntries.append(Entry(
                         startTime: entryStart,
                         duration: 0,
                         rate: .linear,
@@ -159,13 +167,13 @@ public struct ManimScene: Sendable {
                 startTime: entryStart,
                 duration: max(0, animation.duration),
                 rate: animation.rate,
-                kind: animation.kind,
+                kind: kind,
                 targetID: id,
                 startState: startState,
                 endState: startState,
                 alignedPaths: nil
             )
-            if case .transform(let target) = animation.kind {
+            if case .transform(let target) = kind {
                 entry.alignedPaths = startState.path.aligned(with: target.path)
             }
             // The opacity a revealing animation should end at: the current
@@ -175,12 +183,12 @@ public struct ManimScene: Sendable {
                 ? preGroup.opacity
                 : (lastVisibleOpacities[id] ?? animation.mobject.opacity)
             entry.endState = Self.endState(
-                for: animation,
+                for: kind,
                 from: startState,
                 preGroup: preGroup,
                 revealOpacity: revealOpacity
             )
-            entries.append(entry)
+            newEntries.append(entry)
 
             // Advance the build cursor to the state the animation actually
             // leaves behind (for rate functions like `thereAndBack` this is
@@ -196,6 +204,18 @@ public struct ManimScene: Sendable {
             }
             groupDuration = max(groupDuration, max(0, animation.delay) + entry.duration)
         }
+        // Delayed animations can start after siblings listed later in the
+        // call. The snapshot fold applies entries in array order and lets a
+        // completed entry keep asserting its final value, so the timeline
+        // must stay chronological or an early-listed delayed animation
+        // would be overwritten by an already-finished sibling. Ties keep
+        // their listed order (later wins, as documented). Groups only ever
+        // start at or after every entry of the previous group, so sorting
+        // within the group keeps the whole array sorted.
+        let indexed = newEntries.enumerated().sorted {
+            ($0.element.startTime, $0.offset) < ($1.element.startTime, $1.offset)
+        }
+        entries.append(contentsOf: indexed.map { $0.element })
         duration = groupStart + groupDuration
     }
 
@@ -234,15 +254,38 @@ public struct ManimScene: Sendable {
 
     /// The state a not-yet-seen mobject should have at time zero so it is
     /// invisible until its first animation runs.
-    private static func initialState(for animation: ManimAnimation) -> Mobject {
-        switch animation.kind {
+    private static func initialState(for kind: ManimAnimation.Kind, from mobject: Mobject) -> Mobject {
+        switch kind {
         case .create, .fadeIn:
-            return introducedStartState(for: animation.kind, from: animation.mobject)
+            return introducedStartState(for: kind, from: mobject)
         default:
             // Hidden until the instant reveal entry at the play time fires.
-            var state = animation.mobject
+            var state = mobject
             state.opacity = 0
             return state
+        }
+    }
+
+    /// Rewrites group-relative kinds (`groupMove`/`groupRotate`/`groupScale`)
+    /// into concrete ones by resolving the group's bounding-box center from
+    /// the live scene state (falling back to the carried snapshot for
+    /// mobjects the scene has not met yet). Everything else passes through.
+    private static func resolvingGroupKind(
+        _ kind: ManimAnimation.Kind,
+        states: [Mobject.ID: Mobject]
+    ) -> ManimAnimation.Kind {
+        func liveCenter(_ members: [Mobject]) -> Vec2 {
+            MobjectGroup(members.map { states[$0.id] ?? $0 }).center
+        }
+        switch kind {
+        case .groupMove(let point, let members):
+            return .shift(by: point - liveCenter(members))
+        case .groupRotate(let angle, let members):
+            return .rotateAbout(pivot: liveCenter(members), by: angle)
+        case .groupScale(let factor, let members):
+            return .scaleAbout(pivot: liveCenter(members), by: factor)
+        default:
+            return kind
         }
     }
 
@@ -269,13 +312,13 @@ public struct ManimScene: Sendable {
     /// is the mobject's state as the play group begins (the authored value
     /// on first introduction).
     private static func endState(
-        for animation: ManimAnimation,
+        for kind: ManimAnimation.Kind,
         from start: Mobject,
         preGroup: Mobject,
         revealOpacity: Double
     ) -> Mobject {
         var end = start
-        switch animation.kind {
+        switch kind {
         case .create:
             end.strokeStart = 0
             end.strokeEnd = 1
@@ -313,6 +356,10 @@ public struct ManimScene: Sendable {
             end.strokeStart = target.strokeStart
             end.strokeEnd = target.strokeEnd
             end.fillOpacityFactor = target.fillOpacityFactor
+        case .groupMove, .groupRotate, .groupScale:
+            // Rewritten into concrete kinds by play(); an unresolved one
+            // reaching evaluation is inert rather than a crash.
+            break
         }
         return end
     }
@@ -379,6 +426,10 @@ public struct ManimScene: Sendable {
             state.strokeStart = lerp(a.strokeStart, b.strokeStart, p)
             state.strokeEnd = lerp(a.strokeEnd, b.strokeEnd, p)
             state.fillOpacityFactor = lerp(a.fillOpacityFactor, b.fillOpacityFactor, p)
+        case .groupMove, .groupRotate, .groupScale:
+            // Rewritten into concrete kinds by play(); an unresolved one
+            // reaching evaluation is inert rather than a crash.
+            break
         }
         return state
     }

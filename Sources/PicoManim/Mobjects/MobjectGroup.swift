@@ -28,29 +28,35 @@ extension Mobject {
         return (box.min + box.max) / 2
     }
 
-    /// The point on the bounding box in `direction` from the center
-    /// (for example `Vec2(1, 0)` gives the middle of the right edge,
-    /// `Vec2(1, 1)` the top-right corner).
+    /// The point where a ray from the center in `direction` exits the
+    /// bounding box: `Vec2(1, 0)` gives the middle of the right edge, and
+    /// any diagonal - Manim-style `Vec2(1, 1)` or a unit vector alike -
+    /// gives the corner, never a point inside the box. The direction's
+    /// magnitude does not matter.
     public func edge(_ direction: Vec2) -> Vec2 {
         guard let box = boundingBox else { return position }
         let half = (box.max - box.min) / 2
-        return center + Vec2(direction.x * half.x, direction.y * half.y)
+        // How many direction-lengths fit inside the box per axis; the
+        // tighter (larger) ratio decides where the ray exits. A zero-extent
+        // axis with a nonzero direction component pins the ray to the
+        // center along both axes (the limit of an ever-thinner box).
+        let ratioX = half.x > 0 ? abs(direction.x) / half.x : (direction.x == 0 ? 0 : .infinity)
+        let ratioY = half.y > 0 ? abs(direction.y) / half.y : (direction.y == 0 ? 0 : .infinity)
+        let maxRatio = Swift.max(ratioX, ratioY)
+        guard maxRatio > 0, maxRatio.isFinite else { return center }
+        return center + direction / maxRatio
     }
 
-    /// A copy placed beside `other`: shifted so this mobject's bounding box
-    /// sits `gap` away from `other`'s in `direction`. Gaps apply per axis,
-    /// so cardinal directions are the primary use.
+    /// A copy placed beside `other`: shifted so this mobject's facing edge
+    /// point (``edge(_:)`` toward `other`) sits `gap` away from `other`'s
+    /// edge point along `direction`. Cardinal directions line boxes up
+    /// side by side; diagonals meet corner to corner.
     public func nextTo(_ other: Mobject, direction: Vec2 = Vec2(1, 0), gap: Double = 0.25) -> Mobject {
-        let otherBox = other.boundingBox
-        let selfBox = boundingBox
-        let otherHalf = otherBox.map { ($0.max - $0.min) / 2 } ?? .zero
-        let selfHalf = selfBox.map { ($0.max - $0.min) / 2 } ?? .zero
-        let offset = Vec2(
-            direction.x * (otherHalf.x + selfHalf.x + gap),
-            direction.y * (otherHalf.y + selfHalf.y + gap)
-        )
-        let targetCenter = other.center + offset
-        return shifted(by: targetCenter - center)
+        let magnitude = direction.length
+        guard magnitude > 0 else { return self }
+        let unit = direction / magnitude
+        let anchor = other.edge(direction) + unit * gap
+        return shifted(by: anchor - edge(-direction))
     }
 }
 
@@ -224,44 +230,61 @@ extension Array where Element == ManimAnimation {
         group.mobjects.map { ManimAnimation.shift($0, by: delta, duration: duration, rate: rate) }
     }
 
-    /// Moves the group so its bounding-box center lands on `point`.
+    /// Moves the group so its bounding-box center lands on `point`. The
+    /// center is resolved from the scene's live state when played, so the
+    /// group ends on `point` even after earlier animations moved it.
     public static func move(
         _ group: MobjectGroup,
         to point: Vec2,
         duration: Double = 1,
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
-        let delta = point - group.center
-        return group.mobjects.map {
-            ManimAnimation.shift($0, by: delta, duration: duration, rate: rate)
+        group.mobjects.map {
+            ManimAnimation(
+                mobject: $0,
+                kind: .groupMove(to: point, members: group.mobjects),
+                duration: duration,
+                rate: rate
+            )
         }
     }
 
     /// Rotates the group about its bounding-box center: each child rotates
     /// in place while its position orbits the pivot along a circular arc.
+    /// The pivot is the group's *live* center when played, not the center
+    /// of the value this factory captured.
     public static func rotate(
         _ group: MobjectGroup,
         by angle: Double,
         duration: Double = 1,
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
-        let pivot = group.center
-        return group.mobjects.map {
-            ManimAnimation.rotate($0, by: angle, about: pivot, duration: duration, rate: rate)
+        group.mobjects.map {
+            ManimAnimation(
+                mobject: $0,
+                kind: .groupRotate(by: angle, members: group.mobjects),
+                duration: duration,
+                rate: rate
+            )
         }
     }
 
     /// Scales the group about its bounding-box center: each child scales in
-    /// place while its position moves radially.
+    /// place while its position moves radially. The pivot is the group's
+    /// *live* center when played.
     public static func scale(
         _ group: MobjectGroup,
         by factor: Double,
         duration: Double = 1,
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
-        let pivot = group.center
-        return group.mobjects.map {
-            ManimAnimation.scale($0, by: factor, about: pivot, duration: duration, rate: rate)
+        group.mobjects.map {
+            ManimAnimation(
+                mobject: $0,
+                kind: .groupScale(by: factor, members: group.mobjects),
+                duration: duration,
+                rate: rate
+            )
         }
     }
 

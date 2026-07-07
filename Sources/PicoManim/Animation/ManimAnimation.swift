@@ -29,6 +29,17 @@ public struct ManimAnimation: Sendable {
         case scaleAbout(pivot: Vec2, by: Double)
         /// Morphs the mobject's shape and style into the target's.
         case transform(into: Mobject)
+        /// Moves the mobject by whatever delta lands the *group's* live
+        /// bounding-box center on `point`. Group factories emit this so a
+        /// play call resolves the delta from the scene's current state
+        /// rather than the (possibly stale) group value they captured.
+        case groupMove(to: Vec2, members: [Mobject])
+        /// Rotates about the group's live bounding-box center, resolved
+        /// from scene state when played (see ``groupMove(to:members:)``).
+        case groupRotate(by: Double, members: [Mobject])
+        /// Scales about the group's live bounding-box center, resolved
+        /// from scene state when played (see ``groupMove(to:members:)``).
+        case groupScale(by: Double, members: [Mobject])
     }
 
     /// The target mobject as it was when the animation was built. The scene

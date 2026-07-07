@@ -201,4 +201,63 @@ struct GroupAnimationTests {
         #expect(approx(end[0].position, Vec2(1, 0)))
         #expect(approx(end[1].position, Vec2(5, 6)))
     }
+
+    @Test func diagonalEdgeAndNextToStayOnTheBox() {
+        let square = Mobject.square(sideLength: 2) // half-extents (1, 1)
+        // A unit diagonal and a Manim-style (1, 1) both name the corner.
+        let unitDiagonal = Vec2(1, 1) / Vec2(1, 1).length
+        #expect(approx(square.edge(unitDiagonal), Vec2(1, 1)))
+        #expect(approx(square.edge(Vec2(1, 1)), Vec2(1, 1)))
+        // Corner-to-corner placement instead of an overlapping interior hit.
+        let neighbor = Mobject.square(sideLength: 2).nextTo(square, direction: Vec2(1, 1), gap: 0)
+        #expect(approx(neighbor.center, Vec2(2, 2)))
+    }
+
+    @Test func groupMoveResolvesFromTheLiveCenter() throws {
+        var scene = ManimScene()
+        let group = MobjectGroup(
+            Mobject.dot(at: Vec2(-1, 0)),
+            Mobject.dot(at: Vec2(1, 0))
+        )
+        scene.add(group.mobjects)
+        scene.play(.shift(group, by: Vec2(10, 0)))
+        // The factory's group value is now stale; the move must still land
+        // the *live* group center on the requested point.
+        scene.play(.move(group, to: .zero))
+        let end = scene.snapshot(at: scene.duration)
+        #expect(approx(end[0].position, Vec2(-1, 0)))
+        #expect(approx(end[1].position, Vec2(1, 0)))
+    }
+
+    @Test func groupRotateOrbitsTheLivePivot() throws {
+        var scene = ManimScene()
+        let group = MobjectGroup(
+            Mobject.dot(at: Vec2(1, 0)),
+            Mobject.dot(at: Vec2(3, 0))
+        )
+        scene.add(group.mobjects)
+        scene.play(.shift(group, by: Vec2(2, 0))) // live centers: 3 and 5
+        scene.play(.rotate(group, by: .pi))
+        // A half turn about the live center (4, 0) swaps the dots; the
+        // stale pre-shift pivot (2, 0) would fling them to x = 1 and -1.
+        let end = scene.snapshot(at: scene.duration)
+        #expect(approx(end[0].position, Vec2(5, 0), tolerance: 1e-9))
+        #expect(approx(end[1].position, Vec2(3, 0), tolerance: 1e-9))
+    }
+
+    @Test func delayedSiblingDrivesThePropertyAfterItsDelay() throws {
+        var scene = ManimScene()
+        let dot = Mobject.dot(at: .zero)
+        scene.add(dot)
+        var delayed = ManimAnimation.move(dot, to: Vec2(5, 0), duration: 1, rate: .linear)
+        delayed.delay = 1
+        // The delayed animation is listed *first*; chronological entry
+        // ordering must still let it win once its delay elapses instead of
+        // being overwritten by the already-finished sibling.
+        scene.play([delayed, .move(dot, to: Vec2(1, 0), duration: 1, rate: .linear)])
+        let mid = try #require(scene.snapshot(at: 1.5).first)
+        #expect(approx(mid.position, Vec2(2.5, 0)))
+        let end = try #require(scene.snapshot(at: 2).first)
+        #expect(approx(end.position, Vec2(5, 0)))
+    }
 }
