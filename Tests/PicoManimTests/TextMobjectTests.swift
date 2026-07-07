@@ -14,13 +14,13 @@ struct TextMobjectTests {
         // "H" is one outline; "i" is a stem plus a dot.
         #expect(text.path.subpaths.count >= 3)
         #expect(text.path.subpaths.allSatisfy { !$0.curves.isEmpty })
-        let box = try #require(text.boundingBox)
+        let box = try #require(text.worldPath.boundingBox())
         #expect(box.max.x > box.min.x)
     }
 
     @Test func defaultSizeSpansAboutOneUnitPerEm() throws {
         let text = Mobject.text("Xg") // cap height + descender
-        let box = try #require(text.boundingBox)
+        let box = try #require(text.worldPath.boundingBox())
         let height = box.max.y - box.min.y
         // Cap-to-descender extent of a 48-point em should land well within
         // a unit but be clearly visible.
@@ -28,24 +28,25 @@ struct TextMobjectTests {
     }
 
     @Test func fontSizeScalesLinearly() throws {
-        let small = try #require(Mobject.text("X", fontSize: 48).boundingBox)
-        let large = try #require(Mobject.text("X", fontSize: 96).boundingBox)
+        let small = try #require(Mobject.text("X", fontSize: 48).worldPath.boundingBox())
+        let large = try #require(Mobject.text("X", fontSize: 96).worldPath.boundingBox())
         let ratio = (large.max.y - large.min.y) / (small.max.y - small.min.y)
         #expect(approx(ratio, 2, tolerance: 0.05))
     }
 
     @Test func textIsCenteredFilledAndStrokeless() {
         let text = Mobject.text("Center", at: Vec2(2, 1))
-        #expect(approx(text.center.x, 2, tolerance: 1e-6))
-        #expect(approx(text.center.y, 1, tolerance: 1e-6))
+        let center = text.worldPath.boundingBoxCenter
+        #expect(approx(center.x, 2, tolerance: 1e-6))
+        #expect(approx(center.y, 1, tolerance: 1e-6))
         #expect(text.strokeWidth == 0)
         #expect(text.effectiveFillAlpha == 1)
         #expect(text.effectiveStrokeAlpha == 0)
     }
 
     @Test func whitespaceAdvancesWithoutOutlines() throws {
-        let spaced = try #require(Mobject.text("a a").boundingBox)
-        let tight = try #require(Mobject.text("aa").boundingBox)
+        let spaced = try #require(Mobject.text("a a").worldPath.boundingBox())
+        let tight = try #require(Mobject.text("aa").worldPath.boundingBox())
         #expect((spaced.max.x - spaced.min.x) > (tight.max.x - tight.min.x))
     }
 
