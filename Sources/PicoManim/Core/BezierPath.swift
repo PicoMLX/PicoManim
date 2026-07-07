@@ -313,7 +313,14 @@ public struct BezierPath: Sendable, Hashable {
         result.reserveCapacity(subpathCount)
         for i in 0..<subpathCount {
             let sa = pa.subpaths[i]
-            let sb = pb.subpaths[i]
+            // Closed pairs rotate to the least-travel matching even on the
+            // structurally-matched fast path, so directly interpolating two
+            // same-count shapes behaves like the aligned(with:) pipeline
+            // (pre-aligned inputs resolve to offset zero and pass through).
+            var sb = pb.subpaths[i]
+            if sa.isClosed && sb.isClosed && sa.curves.count == sb.curves.count {
+                sb = sb.rotatedToMinimizeTravel(against: sa)
+            }
             let curveCount = Swift.min(sa.curves.count, sb.curves.count)
             var curves: [CubicCurve] = []
             curves.reserveCapacity(curveCount)
@@ -398,7 +405,13 @@ extension BezierPath.Subpath {
     /// open or mismatched subpaths.
     public func rotatedToMinimizeTravel(against reference: BezierPath.Subpath) -> BezierPath.Subpath {
         let count = curves.count
-        guard isClosed, reference.isClosed, count > 1, reference.curves.count == count else {
+        guard isClosed, reference.isClosed, count > 1, reference.curves.count == count,
+              let first = curves.first, let last = curves.last,
+              (last.p1 - first.p0).length <= 1e-9 else {
+            // Only chains that close *explicitly* may rotate: when the
+            // closing edge is implicit (isClosed bridges last.p1 back to
+            // first.p0), rotating the array would move that gap into the
+            // middle of the outline and break the rendered geometry.
             return self
         }
         var bestOffset = 0
