@@ -153,22 +153,22 @@ public struct MobjectGroup: Sendable {
 
 // MARK: - Group animations
 
-// Group factories mirror the single-mobject ones but return one animation
-// per child, ready to pass to `play`. The optional `lag` staggers children:
-// child i starts `i * lag` seconds into the play group (Manim's lag_ratio).
-extension ManimAnimation {
-    private static func staggered(
-        _ animations: [ManimAnimation],
-        lag: Double
-    ) -> [ManimAnimation] {
-        guard lag > 0 else { return animations }
-        return animations.enumerated().map { index, animation in
-            var copy = animation
-            copy.delay = Double(index) * lag
-            return copy
-        }
+/// Staggers a list of animations: child i starts `i * lag` seconds into
+/// the play group (Manim's lag_ratio).
+private func staggered(_ animations: [ManimAnimation], lag: Double) -> [ManimAnimation] {
+    guard lag > 0 else { return animations }
+    return animations.enumerated().map { index, animation in
+        var copy = animation
+        copy.delay = Double(index) * lag
+        return copy
     }
+}
 
+// Group factories mirror the single-mobject ones but return one animation
+// per child, ready to pass to `play`. They live on `[ManimAnimation]` so
+// leading-dot syntax resolves where a `play` call expects an animation
+// list: `scene.play(.create(group, lag: 0.2))`.
+extension Array where Element == ManimAnimation {
     /// Draws each child in; `lag` staggers their start times.
     public static func create(
         _ group: MobjectGroup,
@@ -176,7 +176,10 @@ extension ManimAnimation {
         lag: Double = 0,
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
-        staggered(group.mobjects.map { .create($0, duration: duration, rate: rate) }, lag: lag)
+        staggered(
+            group.mobjects.map { ManimAnimation.create($0, duration: duration, rate: rate) },
+            lag: lag
+        )
     }
 
     /// Fades each child in; `lag` staggers their start times.
@@ -188,7 +191,9 @@ extension ManimAnimation {
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
         staggered(
-            group.mobjects.map { .fadeIn($0, shift: shift, duration: duration, rate: rate) },
+            group.mobjects.map {
+                ManimAnimation.fadeIn($0, shift: shift, duration: duration, rate: rate)
+            },
             lag: lag
         )
     }
@@ -202,7 +207,9 @@ extension ManimAnimation {
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
         staggered(
-            group.mobjects.map { .fadeOut($0, shift: shift, duration: duration, rate: rate) },
+            group.mobjects.map {
+                ManimAnimation.fadeOut($0, shift: shift, duration: duration, rate: rate)
+            },
             lag: lag
         )
     }
@@ -214,7 +221,7 @@ extension ManimAnimation {
         duration: Double = 1,
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
-        group.mobjects.map { .shift($0, by: delta, duration: duration, rate: rate) }
+        group.mobjects.map { ManimAnimation.shift($0, by: delta, duration: duration, rate: rate) }
     }
 
     /// Moves the group so its bounding-box center lands on `point`.
@@ -225,7 +232,9 @@ extension ManimAnimation {
         rate: RateFunction = .smooth
     ) -> [ManimAnimation] {
         let delta = point - group.center
-        return group.mobjects.map { .shift($0, by: delta, duration: duration, rate: rate) }
+        return group.mobjects.map {
+            ManimAnimation.shift($0, by: delta, duration: duration, rate: rate)
+        }
     }
 
     /// Rotates the group about its bounding-box center: each child rotates
@@ -238,7 +247,7 @@ extension ManimAnimation {
     ) -> [ManimAnimation] {
         let pivot = group.center
         return group.mobjects.map {
-            .rotate($0, by: angle, about: pivot, duration: duration, rate: rate)
+            ManimAnimation.rotate($0, by: angle, about: pivot, duration: duration, rate: rate)
         }
     }
 
@@ -252,7 +261,7 @@ extension ManimAnimation {
     ) -> [ManimAnimation] {
         let pivot = group.center
         return group.mobjects.map {
-            .scale($0, by: factor, about: pivot, duration: duration, rate: rate)
+            ManimAnimation.scale($0, by: factor, about: pivot, duration: duration, rate: rate)
         }
     }
 
@@ -267,13 +276,15 @@ extension ManimAnimation {
         var animations: [ManimAnimation] = []
         let paired = Swift.min(group.count, target.count)
         for i in 0..<paired {
-            animations.append(.transform(group[i], into: target[i], duration: duration, rate: rate))
+            animations.append(
+                ManimAnimation.transform(group[i], into: target[i], duration: duration, rate: rate)
+            )
         }
         for i in paired..<group.count {
-            animations.append(.fadeOut(group[i], duration: duration, rate: rate))
+            animations.append(ManimAnimation.fadeOut(group[i], duration: duration, rate: rate))
         }
         for i in paired..<target.count {
-            animations.append(.fadeIn(target[i], duration: duration, rate: rate))
+            animations.append(ManimAnimation.fadeIn(target[i], duration: duration, rate: rate))
         }
         return animations
     }
