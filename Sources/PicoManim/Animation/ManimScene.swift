@@ -54,6 +54,17 @@ public struct ManimScene: Sendable {
     private var lastVisibleOpacities: [Mobject.ID: Double] = [:]
     /// Draw order (insertion order).
     private var order: [Mobject.ID] = []
+    /// Per-frame modifiers layered on top of the animated state.
+    private var updaters: [Updater] = []
+
+    /// A registered per-frame modifier: a pure function of time applied to
+    /// the target's animated state during evaluation.
+    private struct Updater: Sendable {
+        var targetID: Mobject.ID
+        var startTime: Double
+        var endTime: Double?
+        var update: @Sendable (Double, Mobject) -> Mobject
+    }
 
     /// Total length of the timeline in seconds.
     public private(set) var duration: Double = 0
@@ -244,6 +255,38 @@ public struct ManimScene: Sendable {
         duration += max(0, seconds)
     }
 
+    /// Registers a per-frame updater for `mobject`: a **pure function of
+    /// time** applied on top of the animated state whenever the scene is
+    /// evaluated, so scrubbing and looping keep working.
+    ///
+    /// ```swift
+    /// scene.always(dot) { time, state in
+    ///     state.moved(to: Vec2(cos(time), sin(time)))
+    /// }
+    /// ```
+    ///
+    /// The updater is active from the current point in the timeline onward,
+    /// or exactly over `during` when given. Updaters affect evaluation
+    /// only: the build cursor (``state(of:)``) and later animations' start
+    /// poles see the un-updated state, and once a `during` window ends the
+    /// mobject shows its underlying animated state again. A mobject never
+    /// seen before is added (shown) at the current timeline position.
+    public mutating func always(
+        _ mobject: Mobject,
+        during: ClosedRange<Double>? = nil,
+        _ update: @escaping @Sendable (_ time: Double, _ state: Mobject) -> Mobject
+    ) {
+        if currentStates[mobject.id] == nil {
+            add(mobject)
+        }
+        updaters.append(Updater(
+            targetID: mobject.id,
+            startTime: during?.lowerBound ?? duration,
+            endTime: during?.upperBound,
+            update: update
+        ))
+    }
+
     /// The state a mobject will be in after everything scheduled so far.
     /// Useful when building follow-up animations relative to where an
     /// earlier animation left the object.
@@ -265,6 +308,14 @@ public struct ManimScene: Sendable {
             let eased = entry.rate.apply(raw)
             if let current = states[entry.targetID] {
                 states[entry.targetID] = Self.apply(entry, easedProgress: eased, to: current)
+            }
+        }
+        // Updaters layer on top of the animated state, in registration order.
+        for updater in updaters {
+            guard t >= updater.startTime else { continue }
+            if let endTime = updater.endTime, t > endTime { continue }
+            if let current = states[updater.targetID] {
+                states[updater.targetID] = updater.update(t, current)
             }
         }
         return order.compactMap { states[$0] }
