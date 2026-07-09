@@ -321,6 +321,14 @@ public struct ManimScene: Sendable {
             // No-op for a plain create (both poles share the same opacity);
             // restores visibility when re-creating a faded-out object.
             state.opacity = lerp(a.opacity, b.opacity, p)
+            // A stroke-less filled mobject (like text) would be invisible
+            // during the draw-in, so borrow the fill color as a temporary
+            // outline that fades away as the fill arrives (Manim's Write).
+            let targetStrokeInvisible = b.strokeWidth <= 0 || b.strokeColor.alpha <= 0
+            if p < 1, targetStrokeInvisible, b.fillColor.alpha > 0 {
+                state.strokeColor = b.fillColor.withOpacity(b.fillColor.alpha * (1 - fillProgress))
+                state.strokeWidth = 2
+            }
         case .fadeIn(let shift), .fadeOut(let shift):
             state.opacity = lerp(a.opacity, b.opacity, p)
             // A zero-shift fade owns only opacity, so it composes with
