@@ -123,6 +123,11 @@ public struct ManimScene: Sendable {
         // Buffered so the group's entries can be appended in chronological
         // order below, whatever order the caller listed them in.
         var newEntries: [Entry] = []
+        // A group animation expands to one entry per member, all carrying the
+        // same members list; caching the resolved center keeps the whole
+        // group's resolution O(N) instead of recomputing an O(N) bounding
+        // box for every one of the N members.
+        var groupCenterCache: [[Mobject.ID]: Vec2] = [:]
 
         for animation in animations {
             let id = animation.mobject.id
@@ -131,7 +136,11 @@ public struct ManimScene: Sendable {
             // pivot or delta against the live scene state now, so a group
             // animation acts on wherever the group actually is, not on the
             // (possibly stale) group value the factory captured.
-            let kind = Self.resolvingGroupKind(animation.kind, states: groupStartStates)
+            let kind = Self.resolvingGroupKind(
+                animation.kind,
+                states: groupStartStates,
+                centerCache: &groupCenterCache
+            )
             let startState: Mobject
             // The state the mobject is in as this group begins; the authored
             // value for a mobject this play call introduces.
@@ -283,10 +292,18 @@ public struct ManimScene: Sendable {
     /// mobjects the scene has not met yet). Everything else passes through.
     private static func resolvingGroupKind(
         _ kind: ManimAnimation.Kind,
-        states: [Mobject.ID: Mobject]
+        states: [Mobject.ID: Mobject],
+        centerCache: inout [[Mobject.ID]: Vec2]
     ) -> ManimAnimation.Kind {
         func liveCenter(_ members: [Mobject]) -> Vec2 {
-            MobjectGroup(members.map { states[$0.id] ?? $0 }).center
+            // Members of one group share an identical list, so the expensive
+            // bounding-box center is computed once and reused for every
+            // sibling instead of once per member.
+            let key = members.map { $0.id }
+            if let cached = centerCache[key] { return cached }
+            let center = MobjectGroup(members.map { states[$0.id] ?? $0 }).center
+            centerCache[key] = center
+            return center
         }
         switch kind {
         case .groupMove(let point, let members):

@@ -249,6 +249,25 @@ struct GroupAnimationTests {
         #expect(approx(end[1].position, Vec2(3, 0), tolerance: 1e-9))
     }
 
+    @Test func twoGroupsInOnePlayResolveIndependentCenters() throws {
+        // The per-play center cache is keyed by member ids, so two distinct
+        // groups rotated in the same call must each pivot about their own
+        // live center rather than colliding on a shared cache entry.
+        var scene = ManimScene()
+        let left = MobjectGroup(Mobject.dot(at: Vec2(-3, 0)), Mobject.dot(at: Vec2(-1, 0)))
+        let right = MobjectGroup(Mobject.dot(at: Vec2(1, 0)), Mobject.dot(at: Vec2(3, 0)))
+        scene.add(left.mobjects)
+        scene.add(right.mobjects)
+        scene.play(.rotate(left, by: .pi), .rotate(right, by: .pi))
+        let end = scene.snapshot(at: scene.duration)
+        // Left pivots about (-2, 0): dots swap to -1 and -3.
+        #expect(approx(end[0].position, Vec2(-1, 0), tolerance: 1e-9))
+        #expect(approx(end[1].position, Vec2(-3, 0), tolerance: 1e-9))
+        // Right pivots about (2, 0): dots swap to 3 and 1.
+        #expect(approx(end[2].position, Vec2(3, 0), tolerance: 1e-9))
+        #expect(approx(end[3].position, Vec2(1, 0), tolerance: 1e-9))
+    }
+
     @Test func delayedSiblingDrivesThePropertyAfterItsDelay() throws {
         var scene = ManimScene()
         let dot = Mobject.dot(at: .zero)
