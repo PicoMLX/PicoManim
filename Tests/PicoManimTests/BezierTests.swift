@@ -190,6 +190,79 @@ struct BezierPathTests {
         #expect(a.subpaths[1].curves.allSatisfy { approx($0.p0, Vec2(5, 5)) })
     }
 
+    @Test func weightedSubdivisionFollowsArcLength() {
+        // One long edge (length 10) and one short edge (length 1).
+        let subpath = BezierPath.Subpath(curves: [
+            .line(from: Vec2(0, 0), to: Vec2(10, 0)),
+            .line(from: Vec2(10, 0), to: Vec2(10, 1))
+        ])
+        let divided = subpath.subdividedWeighted(to: 11)
+        #expect(divided.curves.count == 11)
+        // The long edge receives the lion's share of the pieces: every piece
+        // covering the short edge stays within x == 10.
+        let shortEdgePieces = divided.curves.filter { $0.p0.x >= 10 - 1e-9 && $0.p1.x >= 10 - 1e-9 }
+        #expect(shortEdgePieces.count <= 2)
+    }
+
+    @Test func closedSubpathRotationMinimizesTravel() throws {
+        // The same square authored from two different starting corners.
+        let corners = [Vec2(1, 1), Vec2(-1, 1), Vec2(-1, -1), Vec2(1, -1)]
+        let square = BezierPath.polygon(corners)
+        let shifted = BezierPath.polygon(Array(corners[2...] + corners[..<2]))
+        let (a, b) = square.aligned(with: shifted)
+        let subA = try #require(a.subpaths.first)
+        let subB = try #require(b.subpaths.first)
+        // After rotation alignment the matched start points coincide, so
+        // the morph is a no-op rather than a half-turn.
+        var travel = 0.0
+        for i in subA.curves.indices {
+            travel += (subA.curves[i].p0 - subB.curves[i].p0).length
+        }
+        #expect(approx(travel, 0, tolerance: 1e-9))
+    }
+
+    @Test func interpolateRotationAlignsSameCountClosedPaths() throws {
+        // Same square authored from opposite corners: structurally matched,
+        // so the fast path is taken - it must still rotate to the
+        // least-travel matching instead of collapsing through the center.
+        let corners = [Vec2(1, 1), Vec2(-1, 1), Vec2(-1, -1), Vec2(1, -1)]
+        let square = BezierPath.polygon(corners)
+        let shifted = BezierPath.polygon(Array(corners[2...] + corners[..<2]))
+        let mid = BezierPath.interpolate(square, shifted, 0.5)
+        let box = try #require(mid.boundingBox())
+        #expect(approx(box.min, Vec2(-1, -1)))
+        #expect(approx(box.max, Vec2(1, 1)))
+    }
+
+    @Test func implicitlyClosedSubpathsDoNotRotate() {
+        // Closure comes from isClosed, not an explicit final edge; rotating
+        // the array would move that gap into the middle of the outline.
+        let implicit = BezierPath.Subpath(curves: [
+            .line(from: Vec2(0, 0), to: Vec2(1, 0)),
+            .line(from: Vec2(1, 0), to: Vec2(1, 1)),
+            .line(from: Vec2(1, 1), to: Vec2(0, 1))
+        ], isClosed: true)
+        let reference = BezierPath.Subpath(curves: [
+            .line(from: Vec2(1, 1), to: Vec2(0, 1)),
+            .line(from: Vec2(0, 1), to: Vec2(0, 0)),
+            .line(from: Vec2(0, 0), to: Vec2(1, 1))
+        ], isClosed: true)
+        let rotated = implicit.rotatedToMinimizeTravel(against: reference)
+        #expect(rotated.curves == implicit.curves)
+    }
+
+    @Test func interpolateAlignsMismatchedInputsOnTheFly() throws {
+        let circle = BezierPath.circle(radius: 1)      // 8 curves
+        let square = BezierPath.rectangle(width: 2, height: 2) // 4 curves
+        let mid = BezierPath.interpolate(circle, square, 0.5)
+        #expect(!mid.isEmpty)
+        let box = try #require(mid.boundingBox())
+        // Somewhere between the circle (max 1) and square (max 1) bounds,
+        // and crucially not truncated to fewer curves.
+        #expect(mid.curveCount == 8)
+        #expect(box.max.x > 0.5 && box.max.x < 1.5)
+    }
+
     @Test func interpolationEndpointsMatchInputs() throws {
         let circle = BezierPath.circle(radius: 1)
         let square = BezierPath.rectangle(width: 2, height: 2)
