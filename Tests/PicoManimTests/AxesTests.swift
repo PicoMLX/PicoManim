@@ -78,6 +78,19 @@ struct AxesTests {
         #expect(approx(axes.point(x: 0, y: 0), Vec2(-4, -2)))
     }
 
+    @Test func subnormalSpanMapsWithoutOverflow() {
+        // A span so small that size / span overflows to +inf must still map
+        // the endpoints to the area edges (via the divide-first fallback),
+        // not to NaN.
+        let tiny = Double.leastNonzeroMagnitude
+        let axes = Axes(x: 0...tiny, y: 0...1, size: Vec2(8, 4), at: .zero)
+        let hi = axes.point(x: tiny, y: 1)
+        let lo = axes.point(x: 0, y: 0)
+        #expect(hi.x.isFinite && hi.y.isFinite && lo.x.isFinite && lo.y.isFinite)
+        #expect(approx(hi, Vec2(4, 2)))
+        #expect(approx(lo, Vec2(-4, -2)))
+    }
+
     @Test func independentTickSpacings() {
         let axes = Axes(
             x: -3...3, y: 0...9, size: Vec2(6, 6), at: .zero,
@@ -118,6 +131,22 @@ struct AxesTests {
         #expect(box.min.x.isFinite && box.max.y.isFinite)
         // Highest finite sample is y = 1 at x = 1 (scene y = 0.5).
         #expect(approx(box.max.y, 0.5, tolerance: 1e-6))
+    }
+
+    @Test func plotDropsSamplesWhoseScenePointOverflows() throws {
+        // On a unit y-range the factor is large enough that a finite-but-huge
+        // sample maps to an overflowing scene point; it must split the branch
+        // like a pole rather than poison the geometry with inf/NaN.
+        let axes = Axes(x: 0...1, y: 0...1, size: Vec2(8, 5), at: .zero)
+        let graph = axes.plot({ $0 == 0.5 ? Double.greatestFiniteMagnitude : 0.5 }, samples: 5)
+        // Samples at x = 0, 0.25 and x = 0.75, 1 form two finite branches;
+        // the overflowing sample at x = 0.5 separates them.
+        #expect(graph.path.subpaths.count == 2)
+        let box = try #require(graph.boundingBox)
+        #expect(box.min.x.isFinite && box.min.y.isFinite && box.max.x.isFinite && box.max.y.isFinite)
+        // An all-overflow plot has no drawable branch: empty path.
+        let empty = axes.plot({ _ in Double.greatestFiniteMagnitude }, samples: 3)
+        #expect(empty.path.isEmpty)
     }
 
     @Test func axesAnimateLikeAnyGroup() throws {

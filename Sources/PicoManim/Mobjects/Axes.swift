@@ -88,10 +88,26 @@ public struct Axes: Sendable {
     // (value - lowerBound) * factor per axis. A degenerate (zero-span)
     // range maps every value to the middle of the area instead of
     // dividing by zero; genuinely tiny spans keep their exact factor.
+    // The span is retained so that a span small enough to overflow
+    // `size / span` can fall back to dividing the (bounded) offset first.
+    private let xSpan: Double
+    private let ySpan: Double
     private let xOrigin: Double
     private let yOrigin: Double
     private let xFactor: Double
     private let yFactor: Double
+
+    // Maps one axis value to a scene coordinate. The normal path uses the
+    // precomputed factor; when the span is so small that `size / span`
+    // overflowed to a non-finite factor, dividing the bounded offset by the
+    // span first keeps the result finite.
+    private static func mapAxis(
+        _ value: Double, lower: Double, span: Double,
+        origin: Double, factor: Double, size: Double
+    ) -> Double {
+        if factor.isFinite { return origin + (value - lower) * factor }
+        return origin + (value - lower) / span * size
+    }
 
     public init(
         x xRange: ClosedRange<Double>,
@@ -115,14 +131,16 @@ public struct Axes: Sendable {
         let yFactor = ySpan > 0 ? size.y / ySpan : 0
         let xOrigin = xSpan > 0 ? areaMin.x : center.x
         let yOrigin = ySpan > 0 ? areaMin.y : center.y
+        self.xSpan = xSpan
+        self.ySpan = ySpan
         self.xFactor = xFactor
         self.yFactor = yFactor
         self.xOrigin = xOrigin
         self.yOrigin = yOrigin
         func scenePoint(_ x: Double, _ y: Double) -> Vec2 {
             Vec2(
-                xOrigin + (x - xRange.lowerBound) * xFactor,
-                yOrigin + (y - yRange.lowerBound) * yFactor
+                Self.mapAxis(x, lower: xRange.lowerBound, span: xSpan, origin: xOrigin, factor: xFactor, size: size.x),
+                Self.mapAxis(y, lower: yRange.lowerBound, span: ySpan, origin: yOrigin, factor: yFactor, size: size.y)
             )
         }
 
@@ -164,17 +182,18 @@ public struct Axes: Sendable {
     /// The scene position of the value coordinate `(x, y)`.
     public func point(x: Double, y: Double) -> Vec2 {
         Vec2(
-            xOrigin + (x - xRange.lowerBound) * xFactor,
-            yOrigin + (y - yRange.lowerBound) * yFactor
+            Self.mapAxis(x, lower: xRange.lowerBound, span: xSpan, origin: xOrigin, factor: xFactor, size: size.x),
+            Self.mapAxis(y, lower: yRange.lowerBound, span: ySpan, origin: yOrigin, factor: yFactor, size: size.y)
         )
     }
 
     /// The graph of `function` sampled uniformly across `range` (the full
     /// x-range by default) as a polyline mobject in scene coordinates.
     /// Values outside the y-range are drawn where they land, not clipped.
-    /// Non-finite samples (a pole, a domain error) split the graph into
-    /// separate branches instead of poisoning the geometry; a graph with no
-    /// drawable branch comes back with an empty path.
+    /// Non-finite samples (a pole, a domain error) - or finite samples
+    /// whose mapped scene point overflows - split the graph into separate
+    /// branches instead of poisoning the geometry; a graph with no drawable
+    /// branch comes back with an empty path.
     public func plot(
         _ function: (Double) -> Double,
         in range: ClosedRange<Double>? = nil,
@@ -191,9 +210,12 @@ public struct Axes: Sendable {
         for index in 0..<count {
             let x = domain.lowerBound + Double(index) * step
             let y = function(x)
-            if y.isFinite {
-                runs[runs.count - 1].append(point(x: x, y: y))
+            let scenePoint = y.isFinite ? point(x: x, y: y) : nil
+            if let scenePoint, scenePoint.x.isFinite, scenePoint.y.isFinite {
+                runs[runs.count - 1].append(scenePoint)
             } else if !(runs.last?.isEmpty ?? true) {
+                // A pole, a domain error, or a mapped point that overflowed
+                // ends the current branch so the next run starts fresh.
                 runs.append([])
             }
         }
